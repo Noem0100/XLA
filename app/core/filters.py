@@ -6,6 +6,20 @@ from .adjustments import pack, adjust
 PRESETS = ['Nguyên bản', 'Chân dung', 'Phong cảnh', 'Điện ảnh', 'Vintage', 'Đen trắng', 'Sepia']
 
 
+def channel_view(image, channel):
+    """Tách R/G/B theo đúng cường độ kênh; kênh 3 hiển thị độ sáng Y'."""
+    if not isinstance(channel, (int, np.integer)) or not 0 <= channel <= 3:
+        raise ValueError('Kênh lọc phải là đỏ (0), xanh lá (1), xanh dương (2) hoặc độ sáng (3).')
+    if channel == 3:
+        rgb = image[..., :3].astype(np.float32)
+        gray = rgb @ np.array([.2126, .7152, .0722], dtype=np.float32)
+        return pack(np.repeat(gray[..., None], 3, axis=2), image)
+    result = np.zeros_like(image)
+    result[..., channel] = image[..., channel]
+    result[..., 3] = image[..., 3]
+    return result
+
+
 def color_range(image, channel):
     """Giữ gam đỏ/xanh lá/xanh dương, chuyển gam khác sang xám; kênh 3 là Y'."""
     if not isinstance(channel, (int, np.integer)) or not 0 <= channel <= 3:

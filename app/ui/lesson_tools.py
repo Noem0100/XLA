@@ -1,4 +1,4 @@
-"""Công cụ bài học: chọn thuật toán, tham số và nguồn ảnh trước khi chạy nền."""
+"""Bộ lọc và xử lý ảnh: chọn chức năng, tham số và nguồn ảnh trước khi chạy nền."""
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
@@ -12,9 +12,30 @@ from .dialogs import parameter_widget, parameter_value
 
 IMAGE_FILTER = 'Ảnh (*.jpg *.jpeg *.png *.webp *.bmp *.tif *.tiff);;Tất cả (*)'
 
+CHOICE_LABELS = {
+    'family': {'gaussian': 'Gaussian', 'butterworth': 'Butterworth', 'ideal': 'Lý tưởng'},
+    'psf': {'gaussian': 'Mờ Gaussian', 'motion': 'Mờ chuyển động ngang'},
+    'direction': {'magnitude': 'Độ lớn gradient', 'x': 'Đạo hàm theo trục ngang (x)',
+                  'y': 'Đạo hàm theo trục dọc (y)'},
+    'operation': {'add': 'Cộng', 'subtract': 'Trừ', 'difference': 'Chênh lệch tuyệt đối',
+                  'multiply': 'Nhân', 'divide': 'Chia', 'and': 'Giao mặt nạ (AND)',
+                  'or': 'Hợp mặt nạ (OR)'},
+    'output': {'color': 'Giữ màu vùng chọn, nền đen', 'mask': 'Mặt nạ trắng / đen'},
+    'shape': {'rect': 'Hình chữ nhật', 'cross': 'Hình chữ thập', 'ellipse': 'Hình elip'},
+    'mode': {'standard': 'Hough chuẩn', 'probabilistic': 'Hough xác suất'},
+}
+CHANNEL_LABELS = {
+    'RGB': ('Đỏ (R)', 'Xanh lá (G)', 'Xanh dương (B)'),
+    'CMY': ('Lục lam (C)', 'Đỏ tía (M)', 'Vàng (Y)'),
+    'HSV': ('Sắc độ (H)', 'Độ bão hòa (S)', 'Độ sáng (V)'),
+    'YCbCr': ('Độ sáng (Y)', 'Sắc sai xanh (Cb)', 'Sắc sai đỏ (Cr)'),
+    'Lab': ('Độ sáng (L)', 'Trục xanh lá – đỏ (a)', 'Trục xanh dương – vàng (b)'),
+}
+RGB_DEFAULTS = {'negative', 'log', 'gamma', 'linear', 'piecewise', 'quantize'}
+
 
 def lesson_modules():
-    """Nạp registry các chương tại chỗ dùng để tránh phụ thuộc vòng vào cửa sổ."""
+    """Nạp các nhóm chức năng tại chỗ để tránh phụ thuộc vòng vào cửa sổ."""
     from app.core import analysis, foundations
     return {1: foundations, 2: enhancement, 3: analysis}
 
@@ -41,7 +62,7 @@ class LessonDialog(QDialog):
     """Form thay đổi theo registry; kết quả chỉ chứa tham số và đường dẫn."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Thuật toán bài học')
+        self.setWindowTitle('Bộ lọc và xử lý ảnh')
         self.resize(690, 690)
         self.setMinimumWidth(540)
         self.modules = lesson_modules()
@@ -49,18 +70,18 @@ class LessonDialog(QDialog):
         self.reference_path = None
         self.frame_paths = []
         layout = QVBoxLayout(self)
-        intro = QLabel('Chọn chương, nhóm và thuật toán để xem mô tả cùng tham số. '
-                       'Áp dụng xử lý ảnh đủ độ phân giải; Ctrl+Z để hoàn tác.')
+        intro = QLabel('Chọn chức năng và điều chỉnh tham số theo ảnh. '
+                       'Áp dụng lên ảnh đang mở ở độ phân giải đầy đủ; Ctrl+Z để hoàn tác.')
         intro.setWordWrap(True)
         layout.addWidget(intro)
         selectors = QFormLayout()
         self.chapter = QComboBox()
-        self.chapter.addItem('Chương 1 · Ảnh số và phép xử lý cơ bản', 1)
-        self.chapter.addItem('Chương 2 · Nâng cao chất lượng ảnh', 2)
-        self.chapter.addItem('Chương 3 · Biên, phân đoạn và hình thái học', 3)
+        self.chapter.addItem('Màu sắc và biến đổi ảnh', 1)
+        self.chapter.addItem('Nâng cao chất lượng ảnh', 2)
+        self.chapter.addItem('Phát hiện biên và phân vùng', 3)
         self.group = QComboBox()
         self.algorithm = QComboBox()
-        for title, widget in [('Chương', self.chapter), ('Nhóm', self.group), ('Thuật toán', self.algorithm)]:
+        for title, widget in [('Danh mục', self.chapter), ('Nhóm', self.group), ('Chức năng', self.algorithm)]:
             selectors.addRow(title, widget)
         layout.addLayout(selectors)
         self.description = QLabel()
@@ -83,6 +104,10 @@ class LessonDialog(QDialog):
         self.mode.addItem('Xử lý riêng từng kênh RGB', 'rgb')
         self.mode.addItem('Chuyển sang ảnh xám', 'grayscale')
         mode_form.addRow('Xử lý màu', self.mode)
+        self.mode_note = QLabel()
+        self.mode_note.setWordWrap(True)
+        mode_form.addRow(self.mode_note)
+        self.mode.currentIndexChanged.connect(self.update_mode_note)
         layout.addWidget(self.mode_row)
         self.reference_row = QWidget()
         reference_layout = QHBoxLayout(self.reference_row)
@@ -116,6 +141,9 @@ class LessonDialog(QDialog):
         self.group.currentIndexChanged.connect(self.change_group)
         self.algorithm.currentIndexChanged.connect(self.change_algorithm)
         self.change_chapter()
+        self.chapter.setCurrentIndex(self.chapter.findData(2))
+        self.group.setCurrentText(self.registry()['gaussian'].group)
+        self.algorithm.setCurrentIndex(self.algorithm.findData('gaussian'))
 
     def registry(self):
         return self.modules[self.chapter.currentData()].ALGORITHMS
@@ -142,19 +170,74 @@ class LessonDialog(QDialog):
         while self.form.rowCount():
             self.form.removeRow(0)
         spec = self.registry()[self.algorithm.currentData()]
-        self.description.setText(f'Bài giảng · trang {spec.pages}\n{spec.description}')
+        self.description.setText(spec.description)
         for key, title, value, minimum, maximum in spec.fields:
-            widget = parameter_widget(value, minimum, maximum)
+            if isinstance(value, list):
+                widget = QComboBox()
+                for choice in value:
+                    widget.addItem(CHOICE_LABELS.get(key, {}).get(choice, str(choice)), choice)
+            elif self.chapter.currentData() == 1 and self.algorithm.currentData() == 'channel' and key == 'channel':
+                widget = QComboBox()
+                title = 'Kênh màu'
+            else:
+                widget = parameter_widget(value, minimum, maximum)
             if isinstance(value, int) and 'lẻ' in title.lower():
                 widget.setSingleStep(2)
             self.widgets[key] = widget
             self.form.addRow(title, widget)
         if not spec.fields:
-            self.form.addRow(QLabel('Thuật toán không cần nhập thêm tham số.'))
+            self.form.addRow(QLabel('Chức năng này không cần nhập thêm tham số.'))
+        if self.chapter.currentData() == 1 and self.algorithm.currentData() == 'channel':
+            self.widgets['space'].currentIndexChanged.connect(self.update_channel_choices)
+            self.update_channel_choices()
+        if 'family' in self.widgets and 'order' in self.widgets:
+            self.widgets['family'].currentIndexChanged.connect(self.update_parameter_dependencies)
+        if 'psf' in self.widgets and 'sigma' in self.widgets:
+            self.widgets['psf'].currentIndexChanged.connect(self.update_parameter_dependencies)
+        if self.algorithm.currentData() == 'nearest':
+            self.widgets['size'].valueChanged.connect(self.update_parameter_dependencies)
+        self.update_parameter_dependencies()
+        self.mode.setCurrentIndex(self.mode.findData('rgb' if self.algorithm.currentData() in RGB_DEFAULTS else 'luminance'))
+        self.update_mode_note()
         self.mode_row.setVisible(self.chapter.currentData() == 2 and not spec.gray_only)
         self.reference_row.setVisible(spec.reference)
         self.frames_row.setVisible(spec.frames)
         self.apply_button.setText('Xem phổ Fourier' if spec.diagnostic else 'Áp dụng vào ảnh')
+
+    def update_mode_note(self, unused=None):
+        """Nêu rõ chế độ màu quyết định công thức áp dụng lên dữ liệu nào."""
+        notes = {
+            'luminance': 'Chỉ xử lý độ sáng, sau đó ghép lại màu gốc. Màu ảnh được giữ gần với ban đầu.',
+            'rgb': 'Áp dụng cùng công thức riêng lên R, G, B. Màu ảnh có thể thay đổi; âm bản đảo cả ba kênh.',
+            'grayscale': 'Chuyển ảnh sang thang xám trước khi xử lý. Kết quả không còn màu.',
+        }
+        self.mode_note.setText(notes[self.mode.currentData()])
+
+    def update_channel_choices(self, unused=None):
+        """Hiển thị tên kênh đúng thứ tự của không gian màu đã chọn."""
+        widget = self.widgets['channel']
+        previous = widget.currentData()
+        widget.clear()
+        for index, title in enumerate(CHANNEL_LABELS[self.widgets['space'].currentData()]):
+            widget.addItem(title, index)
+        widget.setCurrentIndex(previous if previous is not None else 0)
+
+    def update_parameter_dependencies(self, unused=None):
+        """Chỉ cho chỉnh tham số mà thuật toán đang chọn thực sự sử dụng."""
+        if 'family' in self.widgets and 'order' in self.widgets:
+            active = self.widgets['family'].currentData() == 'butterworth'
+            self.widgets['order'].setEnabled(active)
+            self.widgets['order'].setToolTip('Bậc n chỉ dùng cho hàm truyền Butterworth.')
+        if 'psf' in self.widgets and 'sigma' in self.widgets:
+            self.widgets['sigma'].setEnabled(self.widgets['psf'].currentData() == 'gaussian')
+            self.widgets['sigma'].setToolTip('Sigma chỉ dùng cho mô hình mờ Gaussian.')
+        if self.algorithm.currentData() == 'nearest':
+            self.widgets['neighbors'].setMaximum(self.widgets['size'].value() ** 2)
+
+    def parameter_values(self):
+        """Giữ mã tham số gốc dù lựa chọn trên giao diện được dịch sang tiếng Việt."""
+        return {key: widget.currentData() if isinstance(widget, QComboBox) else parameter_value(widget)
+                for key, widget in self.widgets.items()}
 
     def choose_reference(self):
         path, _ = QFileDialog.getOpenFileName(self, 'Chọn ảnh tham chiếu / ảnh thứ hai', '', IMAGE_FILTER)
@@ -175,13 +258,19 @@ class LessonDialog(QDialog):
     def selection(self):
         spec = self.registry()[self.algorithm.currentData()]
         return {'chapter': self.chapter.currentData(), 'algorithm': self.algorithm.currentData(),
-                'params': {key: parameter_value(widget) for key, widget in self.widgets.items()},
+                'params': self.parameter_values(),
                 'mode': 'grayscale' if spec.gray_only else self.mode.currentData(),
                 'reference': self.reference_path if spec.reference else None,
                 'frames': list(self.frame_paths) if spec.frames else []}
 
     def accept(self):
         spec = self.registry()[self.algorithm.currentData()]
+        values = self.parameter_values()
+        for key, title, value, minimum, maximum in spec.fields:
+            if isinstance(value, int) and 'lẻ' in title.lower() and values[key] % 2 == 0:
+                self.error.setText(f'{title} phải là số lẻ.')
+                self.widgets[key].setFocus()
+                return
         if spec.reference and not self.reference_path:
             self.error.setText('Hãy chọn ảnh tham chiếu trước khi áp dụng.')
             return

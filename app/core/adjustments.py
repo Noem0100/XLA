@@ -29,7 +29,8 @@ def adjust(image, values):
     if white <= black:
         raise ValueError('Điểm trắng phải lớn hơn điểm đen.')
     x = np.clip((x - black) / (white - black), 0, 1)
-    x = x ** (100 / max(10, p['gamma']))
+    # Cùng quy ước s=r^gamma với công cụ hiệu chỉnh gamma: 100 là số mũ 1.
+    x = x ** (max(10, p['gamma']) / 100)
     hsv = cv2.cvtColor(x.astype(np.float32), cv2.COLOR_RGB2HSV)
     hsv[..., 1] = np.clip(hsv[..., 1] * (1 + p['saturation'] / 100)
                          + p['vibrance'] / 100 * hsv[..., 1] * (1 - hsv[..., 1]), 0, 1)
@@ -54,15 +55,19 @@ def curve(image, points, channel='RGB'):
 
 
 def hsl(image, center, hue, saturation, lightness, width=35):
-    """Chỉnh dải màu chọn bằng trọng số khoảng cách vòng tròn hue."""
-    hsv = cv2.cvtColor(image[..., :3].astype(np.float32) / 255, cv2.COLOR_RGB2HSV)
-    delta = np.abs(hsv[..., 0] - center)
+    """Chỉnh H/S/L trong dải màu chọn; OpenCV lưu theo thứ tự H, L, S.
+
+    Lightness là (max(R,G,B)+min(R,G,B))/2, khác Value của HSV.
+    Vì vậy tăng L vẫn làm sáng được màu đỏ đã có một kênh đạt 255.
+    """
+    hls = cv2.cvtColor(image[..., :3].astype(np.float32) / 255, cv2.COLOR_RGB2HLS)
+    delta = np.abs(hls[..., 0] - center)
     delta = np.minimum(delta, 360 - delta)
-    weight = np.clip(1 - delta / width, 0, 1) * np.clip(hsv[..., 1] * 5, 0, 1)
-    hsv[..., 0] = (hsv[..., 0] + hue * weight) % 360
-    hsv[..., 1] = np.clip(hsv[..., 1] * (1 + saturation / 100 * weight), 0, 1)
-    hsv[..., 2] = np.clip(hsv[..., 2] + lightness / 100 * weight, 0, 1)
-    return pack(cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB) * 255, image)
+    weight = np.clip(1 - delta / width, 0, 1) * np.clip(hls[..., 2] * 5, 0, 1)
+    hls[..., 0] = (hls[..., 0] + hue * weight) % 360
+    hls[..., 2] = np.clip(hls[..., 2] * (1 + saturation / 100 * weight), 0, 1)
+    hls[..., 1] = np.clip(hls[..., 1] + lightness / 100 * weight, 0, 1)
+    return pack(cv2.cvtColor(hls, cv2.COLOR_HLS2RGB) * 255, image)
 
 
 def auto_tone(image):

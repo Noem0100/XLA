@@ -64,6 +64,7 @@ def test_enlarged_histogram_preserves_an_independent_snapshot(qt_app, logarithmi
     source.set_image(after)
     source.set_context('Tăng tương phản')
     source.log_scale.setChecked(logarithmic)
+    source.set_filter_mode('gamut')
     enlarged.copy_from(source)
     counts, reference = source.values.copy(), source.reference_values.copy()
     np.testing.assert_array_equal(enlarged.values, counts)
@@ -74,15 +75,19 @@ def test_enlarged_histogram_preserves_an_independent_snapshot(qt_app, logarithmi
     assert enlarged.context.text() == 'Tăng tương phản'
     assert enlarged.sample_label.text() == source.sample_label.text()
     assert enlarged.log_scale.isChecked() == logarithmic
+    assert enlarged.filter_mode == 'gamut'
+    assert enlarged.filter_mode_selector.currentData() == 'gamut'
 
     source.set_image(before)
     source.set_reference(None)
     source.set_context('Ảnh khác')
     source.log_scale.setChecked(not logarithmic)
+    source.set_filter_mode('channel')
     np.testing.assert_array_equal(enlarged.values, counts)
     np.testing.assert_array_equal(enlarged.reference_values, reference)
     assert enlarged.context.text() == 'Tăng tương phản'
     assert enlarged.log_scale.isChecked() == logarithmic
+    assert enlarged.filter_mode == 'gamut'
     empty = Histogram()
     enlarged.copy_from(empty)
     assert enlarged.values is None and enlarged.reference_values is None

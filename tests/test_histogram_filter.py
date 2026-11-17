@@ -68,8 +68,14 @@ def test_chart_clicks_and_keys_emit_only_user_selections(qt_app, color_image):
     histogram.show()
     qt_app.processEvents()
     selected = []
+    modes = []
     histogram.channel_selected.connect(selected.append)
+    histogram.filter_mode_changed.connect(modes.append)
     try:
+        histogram.set_filter_mode('gamut')
+        assert modes == []
+        histogram.filter_mode_selector.setCurrentIndex(0)
+        assert modes == ['channel']
         QTest.mouseClick(histogram.charts[0], Qt.MouseButton.LeftButton)
         QTest.keyClick(histogram.charts[0], Qt.Key.Key_Return)
         assert selected == []
@@ -92,20 +98,24 @@ def test_chart_clicks_and_keys_emit_only_user_selections(qt_app, color_image):
 
 
 @pytest.mark.parametrize('channel', [0, 1, 2, 3])
-def test_color_preview_retains_selected_gamut_and_original_alpha(editor, color_image, channel):
-    """Chọn gam giữ màu tương ứng, chuyển gam khác sang xám và giữ nguyên tài liệu."""
+@pytest.mark.parametrize('mode', ['channel', 'gamut'])
+def test_color_preview_uses_selected_mode_and_original_alpha(editor, color_image, channel, mode):
+    """Tách kênh và giữ gam có kết quả khác nhau, đều không đổi tài liệu."""
     original_counts = editor.histogram.values.copy()
     editor.canvas.mask[0, 0] = 255
     mask = editor.canvas.mask.copy()
     rectangle = QRectF(0, 0, 2, 1)
     editor.canvas.rectangle.setRect(rectangle)
     editor.canvas.set_mode('crop')
+    editor.set_histogram_filter_mode(mode)
     editor.toggle_histogram_filter(channel)
     expected = color_image.copy()
     gray_levels = [54, 182, 18]
     for index, gray in enumerate(gray_levels):
-        if channel == 3 or index != channel:
+        if channel == 3 or (mode == 'gamut' and index != channel):
             expected[:, index, :3] = gray
+        elif mode == 'channel' and index != channel:
+            expected[:, index, :3] = 0
     assert editor.color_filter_channel == channel
     assert editor.histogram.selected_channel == channel
     assert editor.canvas.filter_layer.isVisible()
@@ -132,11 +142,11 @@ def test_toggle_filter_preserves_latest_slider_preview_and_compare(editor, qt_ap
     editor.preview()
     editor.timer.stop()
     expected_preview = adjustments.adjust(color_image, {'brightness': 20})
-    expected_filter = filters.color_range(expected_preview, 0)
+    expected_filter = filters.channel_view(expected_preview, 0)
     assert_visible_pixels(pixmap_rgba(editor.canvas.filter_layer), expected_filter)
     preview_counts = editor.histogram.values.copy()
     editor.toggle_histogram_filter(1)
-    expected_green = filters.color_range(expected_preview, 1)
+    expected_green = filters.channel_view(expected_preview, 1)
     assert_visible_pixels(pixmap_rgba(editor.canvas.filter_layer), expected_green)
     assert editor.color_filter_channel == 1
     np.testing.assert_array_equal(editor.histogram.values, preview_counts)
@@ -156,13 +166,16 @@ def test_toggle_filter_preserves_latest_slider_preview_and_compare(editor, qt_ap
     np.testing.assert_array_equal(editor.doc.current, color_image)
 
 
-def test_apply_filter_combines_sliders_and_supports_undo_redo(editor, qt_app, color_image):
+@pytest.mark.parametrize('mode', ['channel', 'gamut'])
+def test_apply_filter_combines_sliders_and_supports_undo_redo(editor, qt_app, color_image, mode):
     """Áp dụng tạo một bước đủ độ phân giải với cả chỉnh sáng và chọn gam màu."""
     editor.sliders['brightness'].setValue(20)
     editor.preview()
     editor.timer.stop()
+    editor.set_histogram_filter_mode(mode)
     editor.toggle_histogram_filter(2)
-    expected = filters.color_range(adjustments.adjust(color_image, {'brightness': 20}), 2)
+    operation = filters.channel_view if mode == 'channel' else filters.color_range
+    expected = operation(adjustments.adjust(color_image, {'brightness': 20}), 2)
     editor.apply_histogram_filter()
     wait_done(qt_app, editor)
     np.testing.assert_array_equal(editor.doc.current, expected)
@@ -177,6 +190,22 @@ def test_apply_filter_combines_sliders_and_supports_undo_redo(editor, qt_app, co
     editor.redo()
     np.testing.assert_array_equal(editor.doc.current, expected)
     assert editor.color_filter_channel is None
+
+
+def test_mode_selector_updates_preview_without_committing(editor, color_image):
+    """Chọn chế độ phải cập nhật ngay ảnh và giải thích, không tạo bước sửa."""
+    assert editor.histogram.filter_mode == 'channel'
+    editor.toggle_histogram_filter(1)
+    assert_visible_pixels(pixmap_rgba(editor.canvas.filter_layer), filters.channel_view(color_image, 1))
+    editor.histogram.filter_mode_selector.setCurrentIndex(1)
+    assert editor.histogram.filter_mode == 'gamut'
+    assert_visible_pixels(pixmap_rgba(editor.canvas.filter_layer), filters.color_range(color_image, 1))
+    assert 'gần như xám' in editor.histogram.filter_help.text()
+    editor.histogram.filter_mode_selector.setCurrentIndex(0)
+    assert_visible_pixels(pixmap_rgba(editor.canvas.filter_layer), filters.channel_view(color_image, 1))
+    assert 'về 0' in editor.histogram.filter_help.text()
+    np.testing.assert_array_equal(editor.doc.current, color_image)
+    assert len(editor.doc.entries) == 1 and not editor.doc.dirty
 
 
 def test_loading_another_document_clears_filter(editor, color_image):
@@ -206,6 +235,11 @@ def test_enlarged_histogram_selects_and_syncs_filter(editor, qt_app):
             assert editor.color_filter_channel == 0
             assert editor.histogram.selected_channel == 0
             assert enlarged.selected_channel == 0
+            enlarged.filter_mode_selector.setCurrentIndex(1)
+            assert enlarged.filter_mode == 'gamut'
+            assert editor.histogram.filter_mode == 'gamut'
+            assert_visible_pixels(pixmap_rgba(editor.canvas.filter_layer),
+                                  filters.color_range(editor.doc.current, 0))
             QTest.mouseClick(enlarged.charts[1], Qt.MouseButton.LeftButton)
             assert editor.color_filter_channel == 1
             assert editor.histogram.selected_channel == 1

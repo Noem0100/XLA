@@ -22,7 +22,7 @@ class Algorithm:
     diagnostic: bool = False
 
 
-SIZE = ('size', 'Cửa sổ lẻ (pixel)', 3, 1, 31)
+SIZE = ('size', 'Cửa sổ lẻ (pixel)', 3, 3, 31)
 SIGMA = ('sigma', 'Sigma Gaussian', 1.0, .1, 20.)
 AMOUNT = ('amount', 'Hệ số tăng nét k', .5, 0., 5.)
 CLIP = ('clip_limit', 'Giới hạn CLAHE', 2.0, .1, 20.)
@@ -36,7 +36,7 @@ PSF_SIZE = ('size', 'Kích thước PSF lẻ', 7, 1, 31)
 ALGORITHMS = {
     'pipeline': Algorithm('Khử nhiễu → CLAHE → tăng nét', 'Quy trình tổng hợp', '55',
         'Trung vị khử nhiễu trước, CLAHE tăng tương phản cục bộ, unsharp làm nét sau cùng.',
-        (('median_size', 'Cửa sổ trung vị lẻ', 3, 1, 31), CLIP, TILES, SIGMA, AMOUNT)),
+        (('median_size', 'Cửa sổ trung vị lẻ', 3, 3, 31), CLIP, TILES, SIGMA, AMOUNT)),
     'linear': Algorithm('Độ sáng và tương phản tuyến tính', 'Biến đổi mức xám', '9–12',
         'g = a(f − m) + m + b. Giá trị âm được chặn về 0; giá trị lớn hơn 255 bị bão hòa.',
         (('gain', 'Hệ số tương phản a', 1.2, -3., 5.), ('bias', 'Độ sáng b (mức)', 0., -255., 255.),
@@ -45,7 +45,7 @@ ALGORITHMS = {
     'log': Algorithm('Biến đổi logarit', 'Biến đổi mức xám', '13–16',
         's = c ln(1 + r), c = 255 / ln(256). Nén dải động và làm nổi vùng tối.',
         (('gain', 'Hệ số nhân c chuẩn hóa', 1., .1, 3.),)),
-    'gamma': Algorithm('Gamma theo công thức bài giảng', 'Biến đổi mức xám', '13–16, 57',
+    'gamma': Algorithm('Hiệu chỉnh gamma', 'Biến đổi mức xám', '13–16, 57',
         's = 255(r/255)^γ. γ < 1 làm sáng, γ > 1 làm tối; dùng số mũ trực tiếp.',
         (('gamma', 'Số mũ γ', .45, .05, 5.),)),
     'piecewise': Algorithm('Giãn tương phản từng đoạn', 'Biến đổi mức xám', '17',
@@ -57,13 +57,13 @@ ALGORITHMS = {
     'bit_plane': Algorithm('Cắt mặt phẳng bit', 'Biến đổi mức xám', '18–19',
         'Tách một trong tám bit của ảnh xám; bit 7 là MSB, bit 0 là LSB.',
         (('bit', 'Mặt phẳng bit (0–7)', 7, 0, 7),), gray_only=True),
-    'quantize': Algorithm('Bó cụm / lượng tử hóa mức xám', 'Biến đổi mức xám', '20',
+    'quantize': Algorithm('Lượng tử hóa mức xám', 'Biến đổi mức xám', '20',
         'g = floor(f / B) × B. B = 64 cho bốn mức 0, 64, 128, 192.', (('step', 'Độ rộng cụm B', 64, 1, 256),)),
     'equalize': Algorithm('Cân bằng histogram toàn cục', 'Xử lý histogram', '23–26',
-        'LUT = round(255 × CDF), đúng thuật toán bốn bước trang 24; không trừ CDF nhỏ nhất như OpenCV. Ảnh một mức sẽ thành trắng.'),
+        'Ánh xạ mức xám bằng LUT = round(255 × CDF) của histogram tích lũy. Không trừ CDF nhỏ nhất; ảnh một mức sẽ thành trắng.'),
     'match': Algorithm('Đối sánh histogram ảnh tham chiếu', 'Xử lý histogram', '27',
         'Ánh xạ CDF ảnh nguồn sang CDF ảnh tham chiếu để chuẩn hóa đặc trưng sáng.', reference=True),
-    'clahe': Algorithm('CLAHE có chỉnh tham số', 'Xử lý histogram', '27, 57',
+    'clahe': Algorithm('Cân bằng tương phản cục bộ (CLAHE)', 'Xử lý histogram', '27, 57',
         'Cân bằng histogram theo ô, giới hạn khuếch đại nhiễu; điều chỉnh clip limit và số ô.', (CLIP, TILES)),
     'otsu': Algorithm('Otsu và ngưỡng tự động', 'Xử lý histogram', '28–30, 57',
         'Tối đa phương sai giữa hai lớp. Mức ≤ t là nền, mức > t là đối tượng; hiển thị ngưỡng tìm được.', gray_only=True),

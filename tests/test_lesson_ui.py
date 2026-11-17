@@ -1,4 +1,4 @@
-"""Tích hợp công cụ ba chương với worker, lịch sử, tài liệu và dialog Qt."""
+"""Tích hợp bộ lọc, tham số, worker, lịch sử, tài liệu và dialog Qt."""
 import time
 
 import numpy as np
@@ -88,6 +88,66 @@ def test_dynamic_dialog_precision_and_required_images(qt_app, monkeypatch):
         dialog.close()
 
 
+def test_named_channels_and_translated_parameters_route_real_values(qt_app, rgba):
+    """Tên kênh rõ ràng phải chọn đúng dữ liệu, không gửi nhãn dịch vào core."""
+    dialog = LessonDialog()
+    try:
+        assert 'Bài học' not in dialog.windowTitle()
+        assert all('Chương' not in dialog.chapter.itemText(i) for i in range(dialog.chapter.count()))
+        select(dialog, 1, 'channel')
+        channel = dialog.widgets['channel']
+        assert channel.itemText(0) == 'Đỏ (R)'
+        channel.setCurrentIndex(1)
+        result, _ = lesson_tools.process_lesson(rgba, dialog.selection())
+        np.testing.assert_array_equal(result[..., 0], rgba[..., 1])
+        dialog.widgets['space'].setCurrentIndex(dialog.widgets['space'].findData('HSV'))
+        assert channel.currentText() == 'Độ bão hòa (S)'
+        assert dialog.selection()['params'] == {'space': 'HSV', 'channel': 1}
+        select(dialog, 1, 'arithmetic')
+        operation = dialog.widgets['operation']
+        operation.setCurrentIndex(operation.findData('difference'))
+        assert operation.currentText() == 'Chênh lệch tuyệt đối'
+        assert dialog.selection()['params']['operation'] == 'difference'
+        select(dialog, 2, 'negative')
+        assert dialog.selection()['mode'] == 'rgb'
+        result, _ = lesson_tools.process_lesson(rgba, dialog.selection())
+        np.testing.assert_array_equal(result[..., :3], 255 - rgba[..., :3])
+        np.testing.assert_array_equal(result[..., 3], rgba[..., 3])
+        select(dialog, 2, 'gaussian')
+        assert dialog.selection()['mode'] == 'luminance'
+    finally:
+        dialog.close()
+
+
+def test_only_effective_filter_parameters_are_editable(qt_app):
+    """Tham số không được thuật toán sử dụng phải rõ trạng thái trên form."""
+    dialog = LessonDialog()
+    try:
+        select(dialog, 2, 'frequency_low')
+        assert not dialog.widgets['order'].isEnabled()
+        family = dialog.widgets['family']
+        family.setCurrentIndex(family.findData('butterworth'))
+        assert dialog.widgets['order'].isEnabled()
+        assert dialog.selection()['params']['family'] == 'butterworth'
+        family.setCurrentIndex(family.findData('ideal'))
+        assert not dialog.widgets['order'].isEnabled()
+        select(dialog, 2, 'inverse')
+        assert dialog.widgets['sigma'].isEnabled()
+        dialog.widgets['psf'].setCurrentIndex(dialog.widgets['psf'].findData('motion'))
+        assert not dialog.widgets['sigma'].isEnabled()
+        select(dialog, 2, 'nearest')
+        dialog.widgets['size'].setValue(3)
+        assert dialog.widgets['neighbors'].maximum() == 9
+        dialog.widgets['size'].setValue(5)
+        assert dialog.widgets['neighbors'].maximum() == 25
+        dialog.widgets['size'].setValue(4)
+        dialog.accept()
+        assert dialog.result() == QDialog.DialogCode.Rejected
+        assert 'phải là số lẻ' in dialog.error.text()
+    finally:
+        dialog.close()
+
+
 def test_lesson_guards_and_cancel_preserve_document(editor, rgba, monkeypatch):
     calls = []
     monkeypatch.setattr(window_module, 'choose_lesson', lambda parent: calls.append(parent))
@@ -116,7 +176,7 @@ def test_no_parameter_lesson_commits_alpha_histogram_and_undo(editor, qt_app, rg
     np.testing.assert_array_equal(editor.doc.current, expected)
     np.testing.assert_array_equal(editor.histogram.reference_values, original_histogram)
     assert not editor.errors and len(editor.doc.entries) == 2
-    assert editor.histogram_context.startswith('Chương 2')
+    assert 'Âm bản' in editor.histogram_context and 'Chương' not in editor.histogram_context
     editor.undo()
     np.testing.assert_array_equal(editor.doc.current, rgba)
     editor.redo()

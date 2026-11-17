@@ -3,7 +3,7 @@ import numpy as np
 from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import QPainter, QColor, QPolygonF, QPen
 from PySide6.QtWidgets import (QWidget, QLabel, QCheckBox, QVBoxLayout,
-                               QHBoxLayout, QGridLayout, QToolTip)
+                               QHBoxLayout, QGridLayout, QToolTip, QComboBox)
 
 
 def histogram_data(image):
@@ -32,8 +32,6 @@ class _ChannelChart(QWidget):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAccessibleName(f'Histogram {title}')
-        self.setAccessibleDescription('Bấm hoặc nhấn Enter, Space để bật/tắt lớp lọc gam màu trên ảnh.')
-        self.setToolTip('Bấm để bật/tắt lớp lọc gam màu trên ảnh. Có thể dùng Enter hoặc Space.')
 
     def mousePressEvent(self, event):
         """Yêu cầu chọn kênh khi bấm chuột trái trên histogram có dữ liệu."""
@@ -148,7 +146,8 @@ class _ChannelChart(QWidget):
             before_count = self.owner.reference_pixel_count
             percentage = 100 * before / before_count if before_count else 0
             text += f'\nTrước: {before:,} pixel ({percentage:.3f}%)'
-        text += '\nBấm hoặc nhấn Enter, Space để bật/tắt lớp lọc gam màu.'
+        text += '\n' + self.owner.filter_description(self.channel)
+        text += '\nBấm hoặc nhấn Enter, Space để bật/tắt xem trước.'
         QToolTip.showText(event.globalPosition().toPoint(), text, self)
 
     def leaveEvent(self, event):
@@ -160,6 +159,7 @@ class _ChannelChart(QWidget):
 class Histogram(QWidget):
     """Bốn histogram 256 mức với tham chiếu trước/sau và thang tuyến tính/log."""
     channel_selected = Signal(int)
+    filter_mode_changed = Signal(str)
 
     def __init__(self, parent=None):
         """Tạo lưới bốn kênh gọn cho panel thuộc tính hoặc cửa sổ công cụ."""
@@ -169,7 +169,8 @@ class Histogram(QWidget):
         self.reference_values = None
         self.reference_pixel_count = 0
         self.selected_channel = None
-        self.setFixedHeight(290)
+        self.filter_mode = 'channel'
+        self.setFixedHeight(340)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
@@ -183,6 +184,21 @@ class Histogram(QWidget):
         self.log_scale.toggled.connect(self._update_charts)
         header.addWidget(self.log_scale)
         layout.addLayout(header)
+        mode_row = QHBoxLayout()
+        mode_label = QLabel('Khi bấm biểu đồ:')
+        mode_row.addWidget(mode_label)
+        self.filter_mode_selector = QComboBox()
+        self.filter_mode_selector.addItem('Tách kênh RGB', 'channel')
+        self.filter_mode_selector.addItem('Giữ gam màu', 'gamut')
+        self.filter_mode_selector.setAccessibleName('Cách xem màu từ histogram')
+        self.filter_mode_selector.setToolTip(
+            'Tách kênh RGB: giữ cường độ của kênh được chọn, đưa hai kênh còn lại về 0.\n'
+            'Giữ gam màu: giữ màu của vùng cùng gam, chuyển vùng màu khác sang xám.\n'
+            'Biểu đồ độ sáng luôn hiển thị ảnh xám Y\'.')
+        self.filter_mode_selector.currentIndexChanged.connect(self._filter_mode_selected)
+        mode_label.setBuddy(self.filter_mode_selector)
+        mode_row.addWidget(self.filter_mode_selector, 1)
+        layout.addLayout(mode_row)
         grid = QGridLayout()
         grid.setSpacing(5)
         self.charts = []
@@ -200,6 +216,11 @@ class Histogram(QWidget):
         self.sample_label.setStyleSheet('font-size: 10px;')
         self.sample_label.setWordWrap(True)
         layout.addWidget(self.sample_label)
+        self.filter_help = QLabel()
+        self.filter_help.setStyleSheet('font-size: 10px;')
+        self.filter_help.setWordWrap(True)
+        layout.addWidget(self.filter_help)
+        self._update_filter_help()
         self.setToolTip("Y' ≈ 0,2126R + 0,7152G + 0,0722B trên mã sRGB 8 bit; không phải độ chói tuyến tính.\n"
                         'TB: trung bình; σ: độ lệch chuẩn. Bỏ pixel alpha=0; các pixel còn lại có trọng số bằng nhau.\n'
                         'Tần suất (%) giúp so sánh các ảnh có kích thước khác nhau. Trỏ chuột vào cột để đọc số pixel.')
@@ -215,14 +236,52 @@ class Histogram(QWidget):
         self.context.setToolTip(text)
 
     def set_selected_channel(self, channel):
-        """Đánh dấu gam đang bật lớp lọc; cập nhật từ controller mà không phát signal."""
+        """Đánh dấu kênh đang xem; cập nhật từ controller mà không phát signal."""
         if channel not in (None, 0, 1, 2, 3):
             raise ValueError('Kênh histogram phải là None hoặc số từ 0 đến 3.')
         self.selected_channel = channel
-        for chart in self.charts:
-            state = 'Đang bật.' if chart.channel == channel else 'Đang tắt.'
-            chart.setAccessibleDescription(f'{state} Bấm hoặc nhấn Enter, Space để bật/tắt lớp lọc gam màu trên ảnh.')
+        self._update_filter_help()
         self._update_charts()
+
+    def filter_description(self, channel):
+        """Giải thích đúng phép biến đổi tương ứng với cách xem đang chọn."""
+        if channel == 3:
+            return "Độ sáng Y': chuyển ảnh sang xám theo độ sáng của từng pixel."
+        name = ('đỏ R', 'xanh lá G', 'xanh dương B')[channel]
+        if self.filter_mode == 'channel':
+            return f'Tách kênh {name}: giữ cường độ kênh này, đưa hai kênh còn lại về 0.'
+        return (f'Giữ gam {name}: giữ vùng cùng gam, chuyển các gam khác sang xám. '
+                'Ảnh ít màu này sẽ gần như xám.')
+
+    def _update_filter_help(self):
+        """Cập nhật giải thích hiển thị và trợ năng khi đổi chế độ hoặc chọn kênh."""
+        if self.selected_channel is not None:
+            explanation = self.filter_description(self.selected_channel)
+        elif self.filter_mode == 'channel':
+            explanation = 'Bấm R, G hoặc B để tách kênh màu; Y\' để xem độ sáng. Bấm lại để tắt.'
+        else:
+            explanation = 'Bấm để giữ một gam màu. Các gam khác thành xám; ảnh ít gam chọn sẽ gần như xám.'
+        self.filter_help.setText(explanation)
+        for chart in self.charts:
+            state = 'Đang bật.' if chart.channel == self.selected_channel else 'Đang tắt.'
+            text = self.filter_description(chart.channel) + '\nBấm hoặc nhấn Enter, Space để bật/tắt xem trước.'
+            chart.setToolTip(text)
+            chart.setAccessibleDescription(f'{state} {text}')
+
+    def set_filter_mode(self, mode):
+        """Đồng bộ cách xem màu từ controller mà không phát lại signal."""
+        if mode not in ('channel', 'gamut'):
+            raise ValueError('Chế độ histogram phải là channel hoặc gamut.')
+        self.filter_mode = mode
+        previous = self.filter_mode_selector.blockSignals(True)
+        self.filter_mode_selector.setCurrentIndex(self.filter_mode_selector.findData(mode))
+        self.filter_mode_selector.blockSignals(previous)
+        self._update_filter_help()
+
+    def _filter_mode_selected(self, index):
+        """Phát yêu cầu đổi cách xem khi người dùng chọn trong danh sách."""
+        self.set_filter_mode(self.filter_mode_selector.itemData(index))
+        self.filter_mode_changed.emit(self.filter_mode)
 
     def copy_from(self, other):
         """Sao chép số liệu đang xem sang cửa sổ lớn mà không tính lại ảnh."""
@@ -230,6 +289,7 @@ class Histogram(QWidget):
         self.pixel_count = other.pixel_count
         self.reference_values = None if other.reference_values is None else other.reference_values.copy()
         self.reference_pixel_count = other.reference_pixel_count
+        self.set_filter_mode(other.filter_mode)
         self.set_selected_channel(other.selected_channel)
         self.set_context(other.context.text())
         self.sample_label.setText(other.sample_label.text())

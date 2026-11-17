@@ -2,7 +2,35 @@
 import numpy as np
 import pytest
 
-from app.core.filters import color_range
+from app.core.filters import channel_view, color_range
+
+
+@pytest.mark.parametrize('channel', [0, 1, 2])
+def test_channel_view_preserves_component_not_only_hue(channel):
+    """Màu hỗn hợp vẫn hiện cường độ kênh, hai kênh còn lại bằng 0."""
+    image = np.array([[[210, 90, 65, 255], [170, 70, 50, 128],
+                       [240, 190, 165, 0], [127, 127, 127, 255]]], dtype=np.uint8)
+    original = image.copy()
+    expected = np.zeros_like(image)
+    expected[..., channel] = image[..., channel]
+    expected[..., 3] = image[..., 3]
+    result = channel_view(image, channel)
+    np.testing.assert_array_equal(result, expected)
+    np.testing.assert_array_equal(image, original)
+    assert not np.shares_memory(result, image)
+
+
+def test_channel_view_brightness_uses_histogram_weights():
+    """Chỉ chế độ độ sáng tạo ảnh xám; RGB giữ nguyên alpha."""
+    image = np.array([[[255, 0, 0, 3], [0, 255, 0, 128], [0, 0, 255, 255]]], dtype=np.uint8)
+    np.testing.assert_array_equal(channel_view(image, 3),
+                                  [[[54, 54, 54, 3], [182, 182, 182, 128], [18, 18, 18, 255]]])
+
+
+@pytest.mark.parametrize('channel', [-1, 4, None, 'red', 1.5])
+def test_invalid_view_channel_raises(channel):
+    with pytest.raises(ValueError):
+        channel_view(np.full((1, 1, 4), 255, dtype=np.uint8), channel)
 
 
 @pytest.mark.parametrize('channel', [0, 1, 2])

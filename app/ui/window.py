@@ -9,9 +9,9 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, Q
     QDialog, QDialogButtonBox)
 from app.core import adjustments, filters, geometry, retouch, enhancement_spatial
 from app.core.io import load_image, export_image, load_project, save_project, from_png
-from app.core.document import Document
 from app.core.batch import batch_export
 from .canvas import Canvas
+from .image_page import ImagePage
 from .histogram import Histogram
 from .dialogs import parameters
 from .worker import Worker
@@ -50,12 +50,13 @@ def scroll_panel(layout):
 class MainWindow(QMainWindow):
     """Controller của ứng dụng; không đặt công thức xử lý điểm ảnh trong UI."""
     def __init__(self):
-        """Khởi tạo trạng thái, timer preview và bố cục ba cột."""
+        """Khởi tạo nhiều trang ảnh cùng bốn cột công cụ, ảnh, thông số, lịch sử."""
         super().__init__()
         self.setWindowTitle('PhotoPremium · Phòng chỉnh ảnh')
         self.resize(1440, 920)
         self.setMinimumSize(1180, 720)
         self.doc = None
+        self.active_page = None
         self.busy = False
         self.task = None
         self.source_name = 'Chưa mở ảnh'
@@ -65,6 +66,7 @@ class MainWindow(QMainWindow):
         self.histogram_reference = None
         self.comparing_original = False
         self.color_filter_channel = None
+        self.color_filter_mode = 'channel'
         self.display_source = None
         self.histogram_detail = None
         self.sliders = {}
@@ -81,7 +83,7 @@ class MainWindow(QMainWindow):
         brand.setObjectName('brand')
         header.addWidget(brand)
         header.addStretch()
-        header.addWidget(button('Mở ảnh  Ctrl+O', self.open_image))
+        header.addWidget(button('Mở ảnh / nhiều ảnh  Ctrl+O', self.open_image))
         header.addWidget(button('Mở dự án', self.open_project))
         header.addWidget(button('Lưu dự án', self.save))
         header.addWidget(button('Xuất ảnh  Ctrl+E', self.export, True))
@@ -90,6 +92,7 @@ class MainWindow(QMainWindow):
         subtitle.setObjectName('section')
         outer.addWidget(subtitle)
         splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter = splitter
         outer.addWidget(splitter, 1)
         splitter.addWidget(self.build_tools())
         center = QWidget()
@@ -113,13 +116,23 @@ class MainWindow(QMainWindow):
         filter_layout.addWidget(button('Tắt lớp lọc', lambda: self.set_histogram_filter(None)))
         layout.addWidget(self.filter_bar)
         self.filter_bar.hide()
-        self.canvas = Canvas()
-        layout.addWidget(self.canvas, 1)
+        self.empty_canvas = Canvas()
+        self.canvas = self.empty_canvas
+        layout.addWidget(self.empty_canvas, 1)
+        self.document_tabs = QTabWidget()
+        self.document_tabs.setDocumentMode(True)
+        self.document_tabs.setTabsClosable(True)
+        self.document_tabs.setMovable(True)
+        self.document_tabs.setUsesScrollButtons(True)
+        self.document_tabs.currentChanged.connect(self.switch_document)
+        self.document_tabs.tabCloseRequested.connect(self.close_document)
+        layout.addWidget(self.document_tabs, 1)
+        self.document_tabs.hide()
         lower = QHBoxLayout()
         lower.addWidget(button('−', lambda: self.canvas.scale(.8, .8)))
         lower.addWidget(button('+', lambda: self.canvas.scale(1.25, 1.25)))
-        lower.addWidget(button('Vừa màn hình', self.canvas.fit_image))
-        lower.addWidget(button('1:1', self.canvas.resetTransform))
+        lower.addWidget(button('Vừa màn hình', lambda: self.canvas.fit_image()))
+        lower.addWidget(button('1:1', lambda: self.canvas.resetTransform()))
         lower.addStretch()
         lower.addWidget(button('↶  Hoàn tác', self.undo))
         lower.addWidget(button('↷  Làm lại', self.redo))
@@ -129,10 +142,12 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.hint)
         splitter.addWidget(center)
         splitter.addWidget(self.build_properties())
-        splitter.setSizes([210, 840, 310])
+        splitter.addWidget(self.build_history())
+        splitter.setSizes([215, 675, 310, 200])
         splitter.setCollapsible(0, False)
         splitter.setCollapsible(1, False)
         splitter.setCollapsible(2, False)
+        splitter.setCollapsible(3, False)
         self.progress = QProgressBar()
         self.progress.setRange(0, 0)
         self.progress.setMaximumWidth(160)
@@ -140,7 +155,8 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self.progress)
         self.statusBar().showMessage('Sẵn sàng · Ảnh được xử lý cục bộ trên máy tính')
         for keys, action in [('Ctrl+O', self.open_image), ('Ctrl+S', self.save), ('Ctrl+E', self.export),
-                             ('Ctrl+Z', self.undo), ('Ctrl+Shift+Z', self.redo)]:
+                             ('Ctrl+Z', self.undo), ('Ctrl+Shift+Z', self.redo),
+                             ('Ctrl+W', lambda: self.close_document(self.document_tabs.currentIndex()))]:
             shortcut = QShortcut(QKeySequence(keys), self)
             shortcut.activated.connect(action)
 
@@ -162,13 +178,16 @@ class MainWindow(QMainWindow):
             ('ÁNH SÁNG VÀ CHI TIẾT', [('Tự cân sáng', lambda: self.run_image('Tự cân sáng', adjustments.auto_tone)),
                                      ('Cân bằng trắng', lambda: self.run_image('Gray world', adjustments.white_balance)),
                                      ('Đường cong Curves', self.do_curve), ('Màu chọn lọc HSL', self.do_hsl),
-                                     ('Bộ lọc / Khử nhiễu', self.do_filter), ('Tối góc Vignette', self.do_vignette)]),
+                                     ('Bộ lọc và xử lý ảnh', self.do_lesson),
+                                     ('Hiệu ứng / Khử nhiễu nhanh', self.do_filter),
+                                     ('So sánh chất lượng ảnh', self.do_quality),
+                                     ('Tối góc Vignette', self.do_vignette)]),
             ('SÁNG TẠO', [('Cọ / Sửa vùng ảnh', self.brush_tab), ('Chèn chữ / Watermark', self.do_text),
                          ('Sticker / Ảnh phủ', self.do_overlay), ('Thêm khung viền', self.do_border),
-                         ('Ghép ảnh Collage', self.do_collage), ('Xử lý hàng loạt', self.do_batch)]),
-            ('BÀI HỌC XỬ LÝ ẢNH', [('Thuật toán bài học', self.do_lesson),
-                                  ('Đánh giá MSE / PSNR / SSIM', self.do_quality)]),
-            ('DỰ ÁN', [('Khôi phục ảnh gốc', self.restore), ('Hướng dẫn nhanh', self.help)])]
+                         ('Ghép ảnh Collage', self.do_collage)]),
+            ('DỰ ÁN', [('Mở nhiều ảnh thành các tab', self.open_image),
+                        ('Xuất hàng loạt theo preset', self.do_batch),
+                        ('Khôi phục ảnh gốc', self.restore), ('Hướng dẫn nhanh', self.help)])]
         for title, actions in groups:
             label = QLabel(title)
             label.setObjectName('section')
@@ -204,6 +223,7 @@ class MainWindow(QMainWindow):
         box.addLayout(histogram_header)
         self.histogram = Histogram()
         self.histogram.channel_selected.connect(self.toggle_histogram_filter)
+        self.histogram.filter_mode_changed.connect(self.set_histogram_filter_mode)
         box.addWidget(self.histogram)
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
@@ -226,7 +246,7 @@ class MainWindow(QMainWindow):
             slider.setValue(adjustments.DEFAULTS[key])
             slider.valueChanged.connect(spin.setValue)
             spin.valueChanged.connect(slider.setValue)
-            slider.valueChanged.connect(lambda value: self.timer.start())
+            slider.valueChanged.connect(self.adjustment_changed)
             self.sliders[key] = slider
             adjust_box.addWidget(slider)
         adjust_box.addStretch()
@@ -253,11 +273,13 @@ class MainWindow(QMainWindow):
         brush.addWidget(self.brush_mode)
         brush.addWidget(QLabel('Đường kính cọ (pixel ảnh)'))
         size = QSpinBox()
+        self.brush_size_control = size
         size.setRange(1, 1000)
         size.setValue(40)
         size.valueChanged.connect(lambda value: setattr(self.canvas, 'brush_size', value))
         brush.addWidget(size)
         erase = QCheckBox('Tẩy vùng mask đã tô')
+        self.brush_eraser_control = erase
         erase.toggled.connect(lambda value: setattr(self.canvas, 'eraser', value))
         brush.addWidget(erase)
         self.brush_amount = QSpinBox()
@@ -272,7 +294,7 @@ class MainWindow(QMainWindow):
         brush.addWidget(self.feather)
         brush.addWidget(button('Bật cọ vẽ mask', lambda: self.mode('brush')))
         brush.addWidget(button('Áp dụng vào vùng tô', self.apply_brush, True))
-        brush.addWidget(button('Xóa vùng chọn / mask', self.canvas.clear_selection))
+        brush.addWidget(button('Xóa vùng chọn / mask', lambda: self.canvas.clear_selection()))
         note = QLabel('Vùng đỏ chỉ là mask, không xuất vào ảnh. Telea dùng mask cứng và bán kính 3 px; thích hợp xóa chi tiết nhỏ. Xóa nền là thao tác bằng cọ, không tự nhận diện chủ thể.')
         note.setWordWrap(True)
         brush.addWidget(note)
@@ -280,13 +302,49 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(scroll_panel(brush), 'Cọ')
         box.addWidget(button('Áp dụng điều chỉnh', self.apply_adjustments, True))
         box.addWidget(button('Đặt lại thanh trượt', self.reset_adjustments))
+        return frame
+
+    def build_history(self):
+        """Đặt lịch sử của tab hiện tại ở cột ngoài cùng bên phải."""
+        frame = QFrame()
+        frame.setObjectName('panel')
+        frame.setMinimumWidth(180)
+        frame.setMaximumWidth(300)
+        box = QVBoxLayout(frame)
+        heading = QLabel('LỊCH SỬ CHỈNH SỬA')
+        heading.setObjectName('section')
+        box.addWidget(heading)
+        self.history_source = QLabel('Chưa mở ảnh')
+        self.history_source.setWordWrap(True)
+        box.addWidget(self.history_source)
+        note = QLabel('Chọn bước để xem histogram trước / sau. Nhấn “Về bước đã chọn” để khôi phục ảnh.')
+        note.setWordWrap(True)
+        box.addWidget(note)
         self.history = QListWidget()
-        self.history.setMaximumHeight(100)
         self.history.setToolTip('Chọn một bước để xem histogram trước/sau của chức năng đó. Ảnh đang chỉnh được giữ nguyên.')
         self.history.currentRowChanged.connect(self.inspect_histogram_step)
-        box.addWidget(QLabel('LỊCH SỬ  /  TỐI ĐA 20 TRẠNG THÁI'))
-        box.addWidget(self.history)
+        box.addWidget(self.history, 1)
+        box.addWidget(button('Về bước đã chọn', self.restore_history_step))
+        box.addWidget(button('↶ Hoàn tác', self.undo))
+        box.addWidget(button('↷ Làm lại', self.redo))
+        limit = QLabel('Tối đa 20 trạng thái / ảnh')
+        limit.setWordWrap(True)
+        box.addWidget(limit)
         return frame
+
+    def adjustment_changed(self, unused=None):
+        """Đánh dấu preview trên tab ngay khi kéo thanh trượt rồi hẹn dựng ảnh."""
+        self.timer.start()
+        self.update_tab_title()
+
+    def update_tab_title(self):
+        """Dấu sao chỉ thuộc tài liệu đang được thay đổi."""
+        if self.active_page is None or self.doc is None:
+            return
+        index = self.document_tabs.indexOf(self.active_page)
+        changed = self.doc.dirty or self.pending() or self.color_filter_channel is not None
+        self.document_tabs.setTabText(index, self.source_name + (' *' if changed else ''))
+        self.document_tabs.setTabToolTip(index, self.source_name)
 
     def alert(self, message):
         """Thông báo lỗi có thể phục hồi; giữ nguyên tài liệu hiện tại."""
@@ -358,6 +416,8 @@ class MainWindow(QMainWindow):
         self.preview_base = self.histogram_sample(image)
         self.set_canvas_image(image)
         self.file_label.setText(f'{self.source_name}   ·   {w} × {h} px' + ('   *' if self.doc.dirty else ''))
+        self.history_source.setText(self.source_name)
+        self.update_tab_title()
         self.history.blockSignals(True)
         self.history.clear()
         for i, (_, label, _) in enumerate(self.doc.entries):
@@ -391,7 +451,7 @@ class MainWindow(QMainWindow):
         self.render_histogram_filter()
 
     def render_histogram_filter(self):
-        """Dựng lớp giữ gam màu trên preview, không ghi vào tài liệu hay histogram."""
+        """Xem riêng kênh RGB hoặc giữ gam; chưa ghi vào tài liệu."""
         channel = self.color_filter_channel
         visible = channel is not None and not self.comparing_original
         self.filter_bar.setVisible(visible)
@@ -399,11 +459,14 @@ class MainWindow(QMainWindow):
             self.canvas.set_color_filter(None)
             return
         sample = self.histogram_sample(self.display_source)
-        self.canvas.set_color_filter(filters.color_range(sample, channel))
-        names = ['gam đỏ', 'gam xanh lá', 'gam xanh dương', 'độ sáng (ảnh xám)']
-        self.filter_label.setText('Lớp lọc xem trước: ' + names[channel])
-        self.filter_label.setToolTip('Giữ vùng thuộc gam màu đang chọn, chuyển màu khác sang xám.\n'
-                                     'Nhấn Áp dụng lớp lọc để lưu hiệu ứng vào ảnh; có thể Ctrl+Z để hoàn tác.')
+        operation = filters.channel_view if self.color_filter_mode == 'channel' else filters.color_range
+        self.canvas.set_color_filter(operation(sample, channel))
+        names = ['đỏ (R)', 'xanh lá (G)', 'xanh dương (B)', 'độ sáng (Y′)']
+        action = 'Tách kênh ' if self.color_filter_mode == 'channel' else 'Giữ gam '
+        self.filter_label.setText('Xem trước: ' + action + names[channel] + ' · Chưa áp dụng')
+        self.filter_label.setToolTip('Tách kênh: giữ giá trị kênh được chọn, hai kênh kia bằng 0.\n'
+                                    'Giữ gam: giữ vùng thuộc gam màu, chuyển màu khác sang xám.\n'
+                                    'Y′ là ảnh độ sáng xám. Áp dụng lớp lọc để lưu kết quả vào ảnh.')
 
     def set_histogram_filter(self, channel):
         """Chọn hoặc tắt lớp lọc, đồng bộ các histogram mà không đổi số liệu."""
@@ -411,6 +474,17 @@ class MainWindow(QMainWindow):
         self.color_filter_channel = channel
         if self.histogram_detail is not None:
             self.histogram_detail.set_selected_channel(channel)
+        self.render_histogram_filter()
+        self.update_tab_title()
+
+    def set_histogram_filter_mode(self, mode):
+        """Đồng bộ cách lọc giữa biểu đồ chính, cửa sổ lớn và tab hiện tại."""
+        if mode not in ('channel', 'gamut') or self.busy:
+            return
+        self.color_filter_mode = mode
+        self.histogram.set_filter_mode(mode)
+        if self.histogram_detail is not None:
+            self.histogram_detail.set_filter_mode(mode)
         self.render_histogram_filter()
 
     def toggle_histogram_filter(self, channel):
@@ -432,10 +506,12 @@ class MainWindow(QMainWindow):
             return
         source = self.doc.current.copy()
         pending = self.pending()
-        names = ['Giữ gam đỏ', 'Giữ gam xanh lá', 'Giữ gam xanh dương', 'Độ sáng (ảnh xám)']
+        prefix = 'Tách kênh ' if self.color_filter_mode == 'channel' else 'Giữ gam '
+        names = [prefix + 'đỏ', prefix + 'xanh lá', prefix + 'xanh dương', 'Độ sáng (ảnh xám)']
+        operation = filters.channel_view if self.color_filter_mode == 'channel' else filters.color_range
         label = names[channel] + (' + điều chỉnh' if pending else '')
         self.start_task(label,
-                        lambda: filters.color_range(adjustments.adjust(source, params) if pending else source, channel),
+                        lambda: operation(adjustments.adjust(source, params) if pending else source, channel),
                         lambda result: self.finish_histogram_filter(result, label))
 
     def finish_histogram_filter(self, result, label):
@@ -462,6 +538,7 @@ class MainWindow(QMainWindow):
         histogram.setMaximumHeight(16777215)
         histogram.copy_from(self.histogram)
         histogram.channel_selected.connect(self.toggle_histogram_filter)
+        histogram.filter_mode_changed.connect(self.set_histogram_filter_mode)
         self.histogram_detail = histogram
         layout.addWidget(histogram, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
@@ -499,6 +576,18 @@ class MainWindow(QMainWindow):
         for key, value in adjustments.DEFAULTS.items():
             self.sliders[key].setValue(value)
         self.timer.stop()
+
+    def restore_history_step(self):
+        """Quay lại snapshot được chọn và giữ nhánh làm lại cho đến lần chỉnh mới."""
+        if not self.ready():
+            return
+        row = self.history.currentRow()
+        if not 0 <= row < len(self.doc.entries):
+            return
+        self.doc.current = from_png(self.doc.entries[row][2])
+        self.doc.index = row
+        self.canvas.clear_selection()
+        self.refresh()
 
     def reset_adjustments(self):
         """Hủy preview, không thay ảnh đã commit."""
@@ -539,45 +628,155 @@ class MainWindow(QMainWindow):
             self.start_task('Điều chỉnh ánh sáng và màu', lambda: adjustments.adjust(source, params),
                             lambda result: self.commit(result, label))
 
+    def save_page_state(self):
+        """Lưu trạng thái thanh trượt và công cụ hiện tại vào tab đang hoạt động."""
+        page = self.active_page
+        if page is None:
+            return
+        page.source_name = self.source_name
+        page.adjustment_values = self.values()
+        page.filter_channel = self.color_filter_channel
+        page.filter_mode = self.color_filter_mode
+        page.history_row = self.history.currentRow()
+        page.property_tab = self.tabs.currentIndex()
+        page.preset_index = self.look.currentIndex()
+        page.preset_strength = self.strength.value()
+        page.brush_index = self.brush_mode.currentIndex()
+        page.brush_amount = self.brush_amount.value()
+        page.feather = self.feather.value()
+        page.hint = self.hint.text()
+
+    def switch_document(self, index):
+        """Chuyển đổi giữa các tab ảnh và khôi phục trạng thái giao diện của tab đó."""
+        if self.busy:
+            return
+        self.timer.stop()
+        if self.active_page is not None and self.document_tabs.indexOf(self.active_page) != -1:
+            self.save_page_state()
+        page = self.document_tabs.widget(index) if 0 <= index < self.document_tabs.count() else None
+        if page is None:
+            self.active_page = None
+            self.doc = None
+            self.canvas = self.empty_canvas
+            self.source_name = 'Chưa mở ảnh'
+            self.color_filter_channel = None
+            self.histogram.set_selected_channel(None)
+            self.histogram.values = None
+            self.histogram.pixel_count = 0
+            self.histogram.set_reference(None)
+            self.histogram.set_context('Chưa mở ảnh')
+            self.histogram._update_charts()
+            self.filter_bar.hide()
+            self.document_tabs.hide()
+            self.empty_canvas.show()
+            self.file_label.setText('Mở một bức ảnh để bắt đầu')
+            self.history_source.setText('Chưa mở ảnh')
+            self.history.clear()
+            self.reset_sliders()
+            return
+        first_open = getattr(page, 'shape', None) is None
+        self.active_page = page
+        self.canvas = page
+        self.doc = page.document
+        self.source_name = getattr(page, 'source_name', 'Ảnh')
+        self.histogram_reference_key = None
+        self.histogram_reference = None
+        self.comparing_original = False
+        self.color_filter_channel = getattr(page, 'filter_channel', None)
+        self.color_filter_mode = getattr(page, 'filter_mode', 'channel')
+        self.histogram.set_filter_mode(self.color_filter_mode)
+        self.histogram.set_selected_channel(self.color_filter_channel)
+        for key, value in getattr(page, 'adjustment_values', adjustments.DEFAULTS).items():
+            if key in self.sliders:
+                self.sliders[key].setValue(value)
+        self.timer.stop()
+        self.tabs.setCurrentIndex(getattr(page, 'property_tab', 0))
+        self.look.setCurrentIndex(getattr(page, 'preset_index', 0))
+        self.strength.setValue(getattr(page, 'preset_strength', 100))
+        self.brush_mode.setCurrentIndex(getattr(page, 'brush_index', 0))
+        self.brush_amount.setValue(getattr(page, 'brush_amount', 25))
+        self.feather.setValue(getattr(page, 'feather', 5))
+        self.brush_size_control.setValue(getattr(page, 'brush_size', 40))
+        self.brush_eraser_control.setChecked(getattr(page, 'eraser', False))
+        self.hint.setText(getattr(page, 'hint', 'Kéo ảnh bằng công cụ Di chuyển. Cuộn chuột để phóng to / thu nhỏ.'))
+        self.refresh()
+        history_row = getattr(page, 'history_row', self.doc.index)
+        if 0 <= history_row < len(self.doc.entries) and history_row != self.doc.index:
+            self.history.setCurrentRow(history_row)
+        if self.pending():
+            self.preview()
+        if first_open:
+            page.set_mode('pan')
+            page.fit_image()
+
+    def close_document(self, index):
+        """Đóng một tab ảnh; hỏi xác nhận nếu tab đó có thay đổi chưa lưu."""
+        if self.busy or not 0 <= index < self.document_tabs.count():
+            return
+        page = self.document_tabs.widget(index)
+        unsaved = ((self.doc.dirty or self.pending() or self.color_filter_channel is not None)
+                   if page is self.active_page else getattr(page, 'unsaved', False))
+        if unsaved:
+            reply = QMessageBox.question(
+                self, 'Thay đổi chưa lưu dự án',
+                f'Đóng "{getattr(page, "source_name", "ảnh")}" sẽ bỏ các thay đổi chưa lưu trong phiên này.\nẢnh đã xuất trên đĩa vẫn được giữ. Tiếp tục?',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        if page is self.active_page:
+            self.active_page = None
+        self.document_tabs.removeTab(index)
+        page.deleteLater()
+        if self.document_tabs.count() == 0:
+            self.switch_document(-1)
+
     def confirm_discard(self):
-        """Hỏi trước khi mở ảnh khác/đóng nếu có thay đổi chưa lưu dự án."""
+        """Hỏi trước khi thoát ứng dụng nếu còn bất kỳ tab nào chưa lưu."""
         if self.busy:
             return False
-        if self.doc and (self.doc.dirty or self.pending()):
-            return QMessageBox.question(self, 'Thay đổi chưa lưu dự án',
-                'Tiếp tục sẽ bỏ các thay đổi chưa lưu trong phiên này.\nẢnh đã xuất trên đĩa vẫn được giữ. Tiếp tục?',
+        self.save_page_state()
+        has_unsaved = any(getattr(self.document_tabs.widget(i), 'unsaved', False)
+                          for i in range(self.document_tabs.count()))
+        if not has_unsaved and self.doc is not None:
+            has_unsaved = self.doc.dirty or self.pending()
+        if has_unsaved:
+            return QMessageBox.question(
+                self, 'Thay đổi chưa lưu dự án',
+                'Thoát ứng dụng sẽ bỏ các thay đổi chưa lưu trong phiên này.\nẢnh đã xuất trên đĩa vẫn được giữ. Tiếp tục?',
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes
         return True
 
     def set_document(self, image, name, original=None, created=False):
-        """Thay document sau khi đọc thành công, giữ tài liệu cũ nếu đọc lỗi."""
-        self.doc = Document(image, original)
-        self.histogram_reference_key = None
-        self.histogram_reference = None
-        self.comparing_original = False
-        self.color_filter_channel = None
-        self.histogram.set_selected_channel(None)
-        if created:
-            self.doc.saved_id = -1
-        self.source_name = name
-        self.reset_sliders()
-        self.canvas.shape = None
-        self.refresh()
-        self.canvas.set_mode('pan')
-        self.canvas.fit_image()
+        """Mở ảnh hoặc dự án mới trong một tab độc lập."""
+        page = ImagePage(image, name, original, created)
+        page.brush_size = self.brush_size_control.value()
+        page.eraser = self.brush_eraser_control.isChecked()
+        self.empty_canvas.hide()
+        self.document_tabs.show()
+        index = self.document_tabs.addTab(page, name)
+        self.document_tabs.setCurrentIndex(index)
+        if self.active_page is not page:
+            self.switch_document(index)
 
     def open_image(self):
-        """Chọn ảnh và nạp có kiểm tra EXIF/ICC/kích thước."""
-        if not self.confirm_discard():
+        """Chọn một hoặc nhiều ảnh và nạp mỗi ảnh thành một tab mới."""
+        if self.busy:
             return
-        path, _ = QFileDialog.getOpenFileName(self, 'Mở ảnh', '', IMAGE_FILTER)
-        if path:
-            self.start_task('Đọc ảnh', lambda: load_image(path), lambda image: self.set_document(image, Path(path).name))
+        paths, _ = QFileDialog.getOpenFileNames(self, 'Mở ảnh', '', IMAGE_FILTER)
+        if paths:
+            self.start_task('Đọc ảnh', lambda: [(Path(path).name, load_image(path)) for path in paths],
+                            self.open_loaded_images)
+
+    def open_loaded_images(self, items):
+        """Tạo tab cho từng ảnh đã nạp thành công."""
+        for name, image in items:
+            self.set_document(image, name)
 
     def open_project(self):
-        """Nạp .mdphoto gồm bản gốc và bản chỉnh; lịch sử bắt đầu lại."""
-        if not self.confirm_discard():
+        """Nạp .mdphoto gồm bản gốc và bản chỉnh vào một tab mới."""
+        if self.busy:
             return
         path, _ = QFileDialog.getOpenFileName(self, 'Mở dự án', '', 'Minh Đăng Photo (*.mdphoto)')
         if path:
@@ -617,7 +816,7 @@ class MainWindow(QMainWindow):
                        'PNG (*.png);;JPEG (*.jpg);;WebP (*.webp);;TIFF (*.tiff);;BMP (*.bmp)')
         if path:
             if not Path(path).suffix:
-                extension = { 'PNG': '.png', 'JPEG': '.jpg', 'WebP': '.webp', 'TIFF': '.tiff', 'BMP': '.bmp'}[selected.split()[0]]
+                extension = {'PNG': '.png', 'JPEG': '.jpg', 'WebP': '.webp', 'TIFF': '.tiff', 'BMP': '.bmp'}[selected.split()[0]]
                 path += extension
             self.start_task('Xuất ảnh', lambda: export_image(self.doc.current, path, options['quality']),
                             lambda _: QMessageBox.information(self, 'Xuất thành công', f'Đã lưu ảnh:\n{path}'))
@@ -850,8 +1049,8 @@ class MainWindow(QMainWindow):
                 self.run_image('Khung viền', lambda image: geometry.border(image, p['size'], p['color']))
 
     def do_collage(self):
-        """Ghép nhiều ảnh thành tài liệu mới sau khi kiểm tra thay đổi chưa lưu."""
-        if not self.confirm_discard():
+        """Ghép nhiều ảnh thành một tab tài liệu mới."""
+        if self.busy:
             return
         paths, _ = QFileDialog.getOpenFileNames(self, 'Chọn tối đa 12 ảnh để ghép', '', IMAGE_FILTER)
         if not paths:
