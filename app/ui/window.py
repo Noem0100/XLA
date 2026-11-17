@@ -646,9 +646,9 @@ class MainWindow(QMainWindow):
         page.feather = self.feather.value()
         page.hint = self.hint.text()
 
-    def switch_document(self, index):
+    def switch_document(self, index, force=False):
         """Chuyển đổi giữa các tab ảnh và khôi phục trạng thái giao diện của tab đó."""
-        if self.busy:
+        if self.busy and not force:
             return
         self.timer.stop()
         if self.active_page is not None and self.document_tabs.indexOf(self.active_page) != -1:
@@ -755,10 +755,12 @@ class MainWindow(QMainWindow):
         page.eraser = self.brush_eraser_control.isChecked()
         self.empty_canvas.hide()
         self.document_tabs.show()
+        self.document_tabs.blockSignals(True)
         index = self.document_tabs.addTab(page, name)
         self.document_tabs.setCurrentIndex(index)
-        if self.active_page is not page:
-            self.switch_document(index)
+        self.document_tabs.blockSignals(False)
+        self.switch_document(index, force=True)
+        QTimer.singleShot(0, page.fit_image)
 
     def open_image(self):
         """Chọn một hoặc nhiều ảnh và nạp mỗi ảnh thành một tab mới."""
@@ -952,7 +954,7 @@ class MainWindow(QMainWindow):
         if selection is None:
             return
         spec = lesson_spec(selection)
-        label = f'Chương {selection["chapter"]} · {spec.title}'
+        label = spec.title
         source = self.doc.current.copy()
         self.start_task(label, lambda: process_lesson(source, selection),
                         lambda output: self.finish_lesson(output, label, spec.diagnostic))
