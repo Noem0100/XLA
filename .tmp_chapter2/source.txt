@@ -1,0 +1,1120 @@
+
+=== TRANG 1 ===
+Xử lý ảnh và thị giác máy tính
+Chương 2
+Nâng cao chất lượng ảnh
+Biến đổi mức xám · Histogram · Lọc không gian · Miền tần số
+ThS. Võ Hoàng Nhân · Khoa Thông tin và Truyền thông · Trường Đại học Kiên Giang
+
+
+=== TRANG 2 ===
+Mở đầu
+Mục tiêu của chương
+01 Phân biệt nâng cao chất lượng ảnh trong miền không gian và miền tần số.
+02 Vận dụng các phép biến đổi mức xám: âm bản, log, gamma, tuyến tính 
+từng đoạn.
+03 Trình bày và cài đặt cân bằng histogram, CLAHE và ngưỡng Otsu.
+04 Áp dụng lọc làm trơn (trung bình, Gauss, trung vị) và làm sắc nét (gradient, 
+Laplacian, unsharp).
+05 Giải thích biến đổi Fourier 2D và lọc thông thấp / thông cao.
+Xử lý ảnh và thị giác máy tính · Chương 2
+2
+
+
+=== TRANG 3 ===
+Mở đầu
+Nội dung chương
+2.1 Giới thiệu về nâng cao chất 
+lượng ảnh
+2.2 Biến đổi mức xám trong miền 
+không gian
+2.3 Xử lý histogram
+2.4 Lọc không gian
+2.5 Nâng cao chất lượng trong miền 
+tần số
+2.6 Khử nhiễu và khôi phục ảnh cơ bản
+2.7 Thực hành với Python và OpenCV
+Xử lý ảnh và thị giác máy tính · Chương 2
+3
+
+
+=== TRANG 4 ===
+2.1
+Giới thiệu về nâng cao chất lượng ảnh
+Hai miền xử lý · Nâng cao chất lượng và khôi phục · Biểu thức tổng quát
+4
+
+
+=== TRANG 5 ===
+2.1 · Giới thiệu
+Hai miền xử lý
+Miền không gian
+Tác động trực tiếp lên giá trị điểm ảnh.
+Biến đổi mức xám (phép điểm)
+Lọc không gian (phép lân cận)
+Miền tần số
+Biến đổi sang phổ Fourier, sửa các tần 
+số, rồi biến đổi ngược.
+Thông thấp → làm trơn
+Thông cao → làm sắc nét
+Cầu nối: tích chập trong miền không gian ⇔ phép nhân trong miền tần số.
+Xử lý ảnh và thị giác máy tính · Chương 2
+5
+
+
+=== TRANG 6 ===
+2.1 · Giới thiệu
+Nâng cao chất lượng và khôi phục ảnh
+Nâng cao chất lượng
+Khôi phục ảnh
+Bản chất
+Chủ quan
+Khách quan
+Cơ sở
+Cảm nhận, mục tiêu sử dụng
+Mô hình suy giảm (mờ, nhiễu)
+Ví dụ
+Tăng độ tương phản
+Khử mờ bằng lọc Wiener
+Không có kỹ thuật “tốt nhất” cho mọi ảnh: chọn theo ảnh đầu vào và mục tiêu, 
+đánh giá cả bằng mắt lẫn chỉ số.
+Xử lý ảnh và thị giác máy tính · Chương 2
+6
+
+
+=== TRANG 7 ===
+2.1 · Giới thiệu
+Biểu thức tổng quát trong miền không gian
+Lân cận 1×1
+Biến đổi mức xám (phép điểm): s = T(r)
+Mục 2.2 – 2.3
+Lân cận m×n
+Lọc không gian với mặt nạ w (ví 
+dụ 3×3)
+Mục 2.4
+Xử lý ảnh và thị giác máy tính · Chương 2
+7
+
+
+=== TRANG 8 ===
+2.2
+Biến đổi mức xám trong miền không 
+gian
+Độ sáng · Tương phản · Âm bản, log, gamma · Tuyến tính từng đoạn
+8
+
+
+=== TRANG 9 ===
+2.2.1 · Biến đổi mức xám
+Thay đổi độ sáng
+b > 0: ảnh sáng lên; b < 0: ảnh tối đi.
+Histogram dịch chuyển, hình dạng không đổi.
+Kết quả phải bão hòa về [0, L − 1] → mất chi tiết ở vùng rất tối hoặc rất sáng.
+Xử lý ảnh và thị giác máy tính · Chương 2
+9
+
+
+=== TRANG 10 ===
+Ví dụ 2.1 · Tính tay
+Cộng độ sáng b = +40 cho vùng ảnh 3×3
+f
+20
+30
+210
+25
+35
+220
+15
+40
+240
+g = f + 40
+60
+70
+250
+65
+75
+255*
+55
+80
+255*
+* Bão hòa: 220 + 40 = 260 → 255 và 240 + 40 = 280 → 255. Cột trái sáng lên rõ, cột phải 
+dồn về 255 và mất khả năng phân biệt.
+Xử lý ảnh và thị giác máy tính · Chương 2
+10
+
+
+=== TRANG 11 ===
+2.2.2 · Biến đổi mức xám
+Thay đổi độ tương phản
+a > 1: tăng tương phản
+0 < a < 1: giảm tương phản
+m: tâm co giãn (thường 128)
+Ví dụ 2.2 · a = 1.5, m = 128
+f
+1.5·(f − 128) + 
+128
+g (bão 
+hòa)
+20
+−34
+0
+30
+−19
+0
+210
+251
+251
+240
+296
+255
+Xử lý ảnh và thị giác máy tính · Chương 2
+11
+
+
+=== TRANG 12 ===
+2.2.3 · Biến đổi mức xám
+Biến đổi tuyến tính tổng quát
+Đường thẳng độ dốc a (tương phản), tung độ gốc b (độ sáng).
+Âm bản là trường hợp riêng: a = −1, b = L − 1.
+OpenCV: cv2.convertScaleAbs(f, alpha=a, beta=b).
+Lưu ý: convertScaleAbs lấy |a·f + b| trước khi bão hòa → giá trị âm không về 0. Khi b < 
+0, dùng np.clip(a*f + b, 0, 255).
+Xử lý ảnh và thị giác máy tính · Chương 2
+12
+
+
+=== TRANG 13 ===
+2.2.4 · Biến đổi mức xám
+Ba hàm biến đổi cơ bản
+Âm bản
+Đảo mức xám; làm nổi chi 
+tiết sáng trong vùng tối 
+(ảnh X-quang).
+Lôgarit
+Nén dải động rộng, làm 
+nổi vùng tối (hiển thị 
+phổ Fourier).
+Gamma
+γ < 1: làm sáng · γ > 1: làm 
+tối. Cơ chế hiệu chỉnh 
+gamma màn hình.
+Âm bản là hàm tuyến tính; log và gamma là hàm phi tuyến.
+Xử lý ảnh và thị giác máy tính · Chương 2
+13
+
+
+=== TRANG 14 ===
+2.2.4 · Biến đổi mức xám
+Đồ thị các hàm biến đổi
+Đường chéo: giữ nguyên ảnh.
+Đường cong trên đường chéo: làm sáng.
+Đường cong dưới đường chéo: làm tối.
+Âm bản: đường chéo ngược.
+Xử lý ảnh và thị giác máy tính · Chương 2
+14
+
+
+=== TRANG 15 ===
+Ví dụ 2.3
+Hiệu chỉnh gamma trên ảnh tối
+(a) ảnh gốc tối · (b) γ = 0.45: sáng lên, lộ chi tiết vùng tối · (c) γ = 2.0: tối hơn
+Xử lý ảnh và thị giác máy tính · Chương 2
+15
+
+
+=== TRANG 16 ===
+Ví dụ 2.4 · Tính tay
+Điểm ảnh 8 bit r = 50 qua ba phép biến đổi
+Âm bản
+205
+255 − 50
+Log (c ≈ 45.99)
+181
+45.99 · ln 51
+Gamma (γ = 0.5)
+113
+255 · (50/255)^0.5
+Cả ba đều làm sáng điểm tối này; log và gamma (γ < 1) làm sáng vùng tối mạnh hơn 
+vùng sáng.
+Xử lý ảnh và thị giác máy tính · Chương 2
+16
+
+
+=== TRANG 17 ===
+2.2.5 · Tuyến tính từng đoạn
+Giãn tương phản
+Hàm gấp khúc qua hai điểm điều khiển (r₁, s₁) và 
+(r₂, s₂).
+Ví dụ 2.5
+Ảnh chỉ dùng dải [80, 170].
+Chọn (80, 0) và (170, 255).
+r = 125 → s = 255·45/90 = 127.5 ≈ 128
+Xử lý ảnh và thị giác máy tính · Chương 2
+17
+
+
+=== TRANG 18 ===
+2.2.5 · Tuyến tính từng đoạn
+Phân ngưỡng và cắt mặt phẳng bit
+Phân ngưỡng
+r₁ = r₂ = T, s₁ = 0, s₂ = L − 1 → ảnh nhị phân.
+Điều kiện
+Mức xám ra s
+r < T
+0
+r ≥ T
+L − 1
+Cắt mặt phẳng bit
+Mỗi mức xám 8 bit gồm 8 bit:
+Mỗi bit aₖ tạo một ảnh nhị phân.
+Xử lý ảnh và thị giác máy tính · Chương 2
+18
+
+
+=== TRANG 19 ===
+2.2.5 · Tuyến tính từng đoạn
+Tám mặt phẳng bit
+MSB
+Bit cao chứa phần lớn 
+thông tin nhìn thấy.
+LSB
+Bit thấp chứa chi tiết tinh 
+và nhiễu.
+Ứng dụng: nén ảnh, giấu tin.
+Xử lý ảnh và thị giác máy tính · Chương 2
+19
+
+
+=== TRANG 20 ===
+2.2.6 · Bó cụm mức xám (*)
+Bó cụm (lượng tử hóa lại)
+B = bunch_size
+f (16 mức)
+12
+55 130 20
+0
+40
+67 128 210
+63
+70
+19
+0
+24
+0
+5
+90 133 25
+0
+→
+g, B = 64 (4 mức)
+0
+0
+128 192
+0
+64 128 192
+0
+64 128 192
+0
+64 128 192
+B = 2ᵏ ⇔ xóa k bit thấp (B = 64 ⇔ bỏ 6 mặt phẳng bit thấp). Giảm quá mức gây hiệu 
+ứng posterization.
+Xử lý ảnh và thị giác máy tính · Chương 2
+20
+
+
+=== TRANG 21 ===
+2.3
+Xử lý histogram
+Histogram · Cân bằng · Đối sánh · CLAHE · Otsu
+21
+
+
+=== TRANG 22 ===
+2.3.1 · Xử lý histogram
+Histogram và các đại lượng thống kê
+Vị trí → độ sáng
+m lớn: ảnh sáng · m nhỏ: ảnh tối
+Độ trải → tương phản
+σ² lớn: tương phản cao · σ² nhỏ: thấp
+Xử lý ảnh và thị giác máy tính · Chương 2
+22
+
+
+=== TRANG 23 ===
+2.3.2 · Cân bằng histogram
+Ý tưởng: giãn theo mật độ
+Mức xám có nhiều điểm ảnh → kéo giãn ra; có 
+ít điểm ảnh → co lại.
+Hàm ánh xạ chính là CDF co giãn về [0, L − 1].
+Xử lý ảnh và thị giác máy tính · Chương 2
+23
+
+
+=== TRANG 24 ===
+2.3.2 · Cân bằng histogram
+Thuật toán bốn bước
+1
+Tính histogram nₖ và chuẩn hóa p(rₖ) = nₖ/MN.
+2
+Tính CDF(rₖ) = p(r₀) + … + p(rₖ).
+3
+Tính sₖ = round[(L − 1) · CDF(rₖ)].
+4
+Thay mọi điểm ảnh rₖ bằng sₖ (bảng tra LUT).
+Ưu: tự động, không tham số · Nhược: có thể khuếch đại nhiễu vùng nền.
+Xử lý ảnh và thị giác máy tính · Chương 2
+24
+
+
+=== TRANG 25 ===
+Bảng 2.1 · Tính tay
+Cân bằng ảnh 3 bit (L = 8, MN = 4096)
+rₖ
+nₖ
+p(rₖ)
+CDF
+sₖ
+0
+790
+0.19
+0.19
+1
+1
+1023
+0.25
+0.44
+3
+2
+850
+0.21
+0.65
+5
+3
+656
+0.16
+0.81
+6
+4
+329
+0.08
+0.89
+6
+5
+245
+0.06
+0.95
+7
+6
+122
+0.03
+0.98
+7
+7
+81
+0.02
+1.00
+7
+s₀ = round(7 × 0.19) = round(1.33) = 1
+s₂ = round(7 × 0.65) = round(4.55) = 5
+Mức 3, 4 → 6; mức 5, 6, 7 → 7. Kết 
+quả còn 5 mức nhưng trải đều hơn 
+trên [0, 7].
+Nguồn: Gonzalez và Woods (2018).
+Xử lý ảnh và thị giác máy tính · Chương 2
+25
+
+
+=== TRANG 26 ===
+2.3.2 · Cân bằng histogram
+Hiệu quả trên ảnh tương phản thấp
+(a, b) ảnh và histogram gốc · (c, d) sau cân bằng: histogram trải rộng khắp dải
+Xử lý ảnh và thị giác máy tính · Chương 2
+26
+
+
+=== TRANG 27 ===
+2.3.3 – 2.3.4 · Xử lý histogram
+Đối sánh histogram và CLAHE
+Đối sánh histogram (*)
+T: hàm cân bằng ảnh gốc
+G: hàm cân bằng histogram đích
+Chuẩn hóa nhiều ảnh về cùng đặc 
+trưng sáng
+CLAHE
+Chia ảnh thành ô, cân bằng riêng từng ô
+Giới hạn khuếch đại (clip limit)
+Nội suy song tuyến tính ghép các ô
+Tham số: clipLimit, tileGridSize
+Zuiderveld (1994)
+Xử lý ảnh và thị giác máy tính · Chương 2
+27
+
+
+=== TRANG 28 ===
+2.3.5 · Ngưỡng tự động
+Phương pháp Otsu
+Ngưỡng t chia mức xám thành nền C₀ = {0…t} và đối tượng C₁ = {t+1…L−1}.
+Xử lý ảnh và thị giác máy tính · Chương 2
+28
+
+
+=== TRANG 29 ===
+Bảng 2.2 · Tính tay
+Otsu trên histogram 6 mức (N = 30)
+n₀ … n₅ = 15, 5, 4, 3, 2, 1
+t
+ω₀
+ω₁
+μ₀
+μ₁
+σB²
+0
+0.500
+0.500
+0.000
+2.333
+1.361
+1
+0.667
+0.333
+0.250
+3.000
+1.681
+2
+0.800
+0.200
+0.542
+3.667
+1.563
+3
+0.900
+0.100
+0.815
+4.333
+1.114
+4
+0.967
+0.033
+1.034
+5.000
+0.507
+σB²(1) = ⅔ × ⅓ × (3.0 − 0.25)² ≈ 1.681 lớn nhất → t* = 1: mức ≤ 1 là nền.
+Xử lý ảnh và thị giác máy tính · Chương 2
+29
+
+
+=== TRANG 30 ===
+2.3.5 · Ngưỡng tự động
+Otsu trên ảnh thử
+Otsu tốt khi histogram có hai đỉnh rõ (ở đây t* = 119); nhiều đỉnh hoặc tương phản thấp → 
+ngưỡng thích nghi (Chương 3).
+Xử lý ảnh và thị giác máy tính · Chương 2
+30
+
+
+=== TRANG 31 ===
+2.4
+Lọc không gian
+Cơ chế lọc · Làm trơn · Làm sắc nét · So sánh các bộ lọc
+31
+
+
+=== TRANG 32 ===
+2.4.1 · Lọc không gian
+Cơ chế: trượt mặt nạ trên ảnh
+Tương quan
+Tích chập (lật mặt nạ 180°)
+Mặt nạ đối xứng tâm (trung bình, Gauss): hai phép cho cùng kết quả; Sobel thì 
+khác dấu.
+OpenCV filter2D thực hiện phép tương quan.
+Biên ảnh: đệm 0, nhân bản biên hoặc phản chiếu.
+Mặt nạ tách được: m·n → m + n phép nhân mỗi điểm.
+Xử lý ảnh và thị giác máy tính · Chương 2
+32
+
+
+=== TRANG 33 ===
+2.4.1 · Ma trận mẫu
+Ma trận ảnh mẫu dùng cho mọi ví dụ
+f (5×5)
+10
+10
+10
+100 100
+10
+10
+10
+100 100
+10
+10
+50
+100 100
+10
+10
+10
+100 100
+10
+10
+10
+100 100
+→
+Cửa sổ W quanh tâm
+10
+10
+100
+10
+50
+100
+10
+10
+100
+Điểm 50 là nhiễu nằm trên biên giữa vùng tối (10) và vùng sáng (100). Tính g(2, 2) 
+bằng nhiều bộ lọc 3×3.
+Xử lý ảnh và thị giác máy tính · Chương 2
+33
+
+
+=== TRANG 34 ===
+2.4.2 · Lọc làm trơn
+Lọc trung bình (box filter)
+w = 1/9 ×
+1
+1
+1
+1
+1
+1
+1
+1
+1
+Ví dụ 2.8
+Tổng = 120 + 160 + 120 = 400
+g = 400/9 ≈ 44.4 → 44
+Không nhiễu vẫn ra 40 (nhòe biên); điểm nhiễu chỉ bị pha loãng thêm ≈ 4.4, không bị 
+loại bỏ.
+Xử lý ảnh và thị giác máy tính · Chương 2
+34
+
+
+=== TRANG 35 ===
+2.4.2 · Lọc làm trơn
+Lọc Gauss
+w ≈ 1/16 ×
+1
+2
+1
+2
+4
+2
+1
+2
+1
+Ví dụ 2.9
+Tổng = 130 + 420 + 130 = 680
+g = 680/16 = 42.5 → 43
+Trọng số dồn về tâm → làm trơn tự nhiên, ít mờ biên hơn; mặt nạ tách được.
+Xử lý ảnh và thị giác máy tính · Chương 2
+35
+
+
+=== TRANG 36 ===
+2.4.2 · Lọc làm trơn
+Lọc trung vị: bộ lọc phi tuyến
+Ví dụ 2.10: sắp xếp 9 giá trị của W, lấy phần tử thứ 5:
+10
+10
+10
+10
+10
+50
+100 100 100
+g(2, 2) = 10: điểm nhiễu bị loại bỏ hoàn toàn, biên được giữ. Lựa chọn số một cho 
+nhiễu muối tiêu.
+Xử lý ảnh và thị giác máy tính · Chương 2
+36
+
+
+=== TRANG 37 ===
+Bảng 2.3 · Tổng hợp
+Ba bộ lọc tại cùng điểm nhiễu (gốc = 50)
+Trung bình
+44
+Pha loãng nhiễu, nhòe biên
+Gauss
+43
+Tương tự, lệch nhẹ do 
+trọng số
+Trung vị
+10
+Loại bỏ nhiễu, khớp nền
+Nhiễu muối tiêu → lọc trung vị · Nhiễu Gauss → lọc trung bình hoặc Gauss.
+Xử lý ảnh và thị giác máy tính · Chương 2
+37
+
+
+=== TRANG 38 ===
+2.4.2 · Lọc làm trơn
+So sánh trên toàn ảnh
+(a) ảnh nhiễu · (b) trung bình · (c) Gauss · (d) trung vị
+Trung bình, Gauss: mờ nhẹ, giảm nhiễu Gauss · Trung vị: khử muối tiêu tốt hơn hẳn.
+Xử lý ảnh và thị giác máy tính · Chương 2
+38
+
+
+=== TRANG 39 ===
+2.4.2 · Lọc làm trơn (*)
+Trung bình theo K giá trị gần nhất
+1
+Tính |I(q) − I(P)| với mọi q trong cửa sổ, sắp 
+tăng dần.
+2
+Lấy trung bình K giá trị gần nhất: AVₖ(P).
+3
+Nếu |AVₖ − I(P)| > τ thì thay I(P) bằng AVₖ.
+Ví dụ 2.11 · K = 3, τ = 2
+1
+2
+3
+2
+4
+16
+2
+1
+4
+2
+1
+1
+2
+1
+2
+1
+Gần 16 nhất: {16, 4, 4}
+AV₃ = 24/3 = 8; |8 − 16| > 2 → g 
+= 8
+Xử lý ảnh và thị giác máy tính · Chương 2
+39
+
+
+=== TRANG 40 ===
+2.4.3 · Làm sắc nét
+Gradient và mặt nạ Sobel
+Gx (biên dọc)
+−1
+0
+1
+−2
+0
+2
+−1
+0
+1
+Gy (biên ngang)
+−1
+−2
+−1
+0
+0
+0
+1
+2
+1
+Ví dụ 2.12 trên W
+Gx = 90 + 180 + 90 = 360
+Gy = −130 + 0 + 130 = 0
+|∇f| = 360 → biên dọc mạnh
+Tích chập đúng định nghĩa lật Gx thành −Gx → kết quả −360. Cần biết hàm thư viện dùng 
+phép nào.
+Xử lý ảnh và thị giác máy tính · Chương 2
+40
+
+
+=== TRANG 41 ===
+2.4.3 · Làm sắc nét
+Đạo hàm bậc hai: Laplacian
+Tâm âm
+0
+1
+0
+1
+−4
+1
+0
+1
+0
+Tâm dương
+0
+−1
+0
+−1
+4
+−1
+0
+−1
+0
+Ví dụ 2.13
+Tại điểm nhiễu: 10 + 10 + 10 + 100 − 4·50 = −70
+Vùng phẳng f(1, 1): 0
+Xử lý ảnh và thị giác máy tính · Chương 2
+41
+
+
+=== TRANG 42 ===
+2.4.3 · Làm sắc nét
+Unsharp masking và high-boost
+Hệ số k
+k = 1: unsharp masking chuẩn
+k > 1: high-boost, sắc nét mạnh hơn
+f̄ : ảnh làm mờ (thường lọc Gauss)
+Ví dụ 2.14 · k = 1.5
+f = 50, f̄ = 43 (Ví dụ 2.9)
+g_mask = 50 − 43 = 7
+g = 50 + 1.5 × 7 = 60.5 → 61
+Xử lý ảnh và thị giác máy tính · Chương 2
+42
+
+
+=== TRANG 43 ===
+2.4.3 · Làm sắc nét
+Kết quả làm sắc nét
+(a) gốc · (b) |Laplacian| · (c) f − ∇²f · (d) unsharp masking
+Laplacian làm nổi mọi biên và cả nhiễu; unsharp masking cho kết quả tự nhiên hơn.
+Xử lý ảnh và thị giác máy tính · Chương 2
+43
+
+
+=== TRANG 44 ===
+Bảng 2.4 · Tổng hợp
+So sánh các bộ lọc không gian
+Bộ lọc
+Loại
+Đặc điểm
+Trung bình
+Tuyến tính, làm trơn
+Đơn giản; khử nhiễu Gauss nhưng mờ biên
+Gauss
+Tuyến tính, làm trơn
+Trơn tự nhiên, ít mờ biên, tách được
+Trung vị
+Phi tuyến, làm trơn
+Khử muối tiêu rất tốt, giữ biên
+Laplacian
+Tuyến tính, sắc nét
+Nổi biên qua đạo hàm bậc hai; nhạy nhiễu
+Unsharp
+Tuyến tính, sắc nét
+Tăng nét bằng hiệu ảnh gốc và ảnh mờ
+Chi phí trực tiếp: M·N·m·n · Mặt nạ tách được: M·N·(m + n) · FFT: M·N·log(M·N)
+Xử lý ảnh và thị giác máy tính · Chương 2
+44
+
+
+=== TRANG 45 ===
+2.5
+Nâng cao chất lượng trong miền tần 
+số
+DFT · Quy trình lọc · Thông thấp · Thông cao · Chọn miền
+45
+
+
+=== TRANG 46 ===
+2.5.1 · Miền tần số
+Biến đổi Fourier rời rạc 2D
+Tần số thấp (gần tâm): nền, biến 
+thiên chậm.
+Tần số cao: biên, chi tiết, nhiễu.
+Dịch ảnh chỉ đổi pha, không đổi biên độ.
+Xử lý ảnh và thị giác máy tính · Chương 2
+46
+
+
+=== TRANG 47 ===
+2.5.2 · Miền tần số
+Quy trình lọc trong miền tần số
+f(x, y) →
+DFT →
+× H(u, v) →
+IDFT →
+g(x, y)
+DFT giả định ảnh tuần hoàn → đệm 0 lên gấp đôi trước khi biến đổi, rồi cắt lại vùng M×N.
+Xử lý ảnh và thị giác máy tính · Chương 2
+47
+
+
+=== TRANG 48 ===
+2.5.3 · Lọc thông thấp
+Ba bộ lọc thông thấp (làm trơn)
+Lý tưởng (ILPF)
+Điều kiện
+H
+D ≤ D₀
+1
+D > D₀
+0
+Butterworth bậc n
+Gauss (GLPF)
+Lý tưởng cắt gọn nhưng gây gợn sóng (ringing); Gauss trơn nên không gợn sóng.
+D₀ nhỏ → làm trơn mạnh · n lớn → Butterworth tiến gần lý tưởng.
+Xử lý ảnh và thị giác máy tính · Chương 2
+48
+
+
+=== TRANG 49 ===
+2.5.3 – 2.5.4 · Miền tần số
+Hàm truyền theo khoảng cách D
+(a) thông thấp: lý tưởng, Butterworth, Gauss · (b) thông cao tương ứng
+Xử lý ảnh và thị giác máy tính · Chương 2
+49
+
+
+=== TRANG 50 ===
+2.5.4 · Lọc thông cao
+Lọc thông cao và lọc chắn
+Lọc chắn (notch): đặt tại các đỉnh sáng của nhiễu tuần hoàn 
+trong phổ để khử vân sọc.
+Xử lý ảnh và thị giác máy tính · Chương 2
+50
+
+
+=== TRANG 51 ===
+2.5.5 · Lựa chọn
+Miền không gian hay miền tần số?
+Miền không gian
+Trực quan, dễ cài đặt
+Hiệu quả với mặt nạ nhỏ
+Cho phép phép phi tuyến (trung vị)
+Miền tần số
+Bộ lọc kích thước lớn (nhờ FFT)
+Thiết kế theo đặc tính tần số
+Khử nhiễu tuần hoàn bằng lọc chắn
+Thực hành: phân tích phổ để hiểu bản chất nhiễu, rồi mới chọn miền và bộ lọc.
+Xử lý ảnh và thị giác máy tính · Chương 2
+51
+
+
+=== TRANG 52 ===
+2.6
+Khử nhiễu và khôi phục ảnh
+Trung bình nhiều ảnh · Lọc ngược · Lọc Wiener · Quy trình tổng hợp
+52
+
+
+=== TRANG 53 ===
+2.6 · Khử nhiễu
+Trung bình nhiều ảnh của cảnh tĩnh
+Mỗi ảnh quan sát gᵢ = f + ηᵢ, nhiễu không tương quan, kỳ vọng bằng 0.
+Ví dụ 2.15 · K = 100
+÷10
+Độ lệch chuẩn nhiễu còn 10%
+Kính thiên văn, kính hiển vi chụp và cộng dồn hàng trăm khung hình để có 
+ảnh sạch.
+Xử lý ảnh và thị giác máy tính · Chương 2
+53
+
+
+=== TRANG 54 ===
+2.6.1 – 2.6.2 · Khôi phục ảnh (*)
+Lọc ngược và lọc Wiener
+Mô hình suy giảm: G = H·F + N (H: hàm mờ, N: nhiễu)
+Lọc ngược
+Rất nhạy nhiễu ở tần số mà H nhỏ.
+Lọc Wiener
+Cân bằng khử mờ và khử nhiễu; K liên quan 
+tỉ số nhiễu/tín hiệu.
+Mở rộng: trung vị thích nghi (nhiễu muối tiêu dày) · lọc đồng hình (chiếu sáng không đều).
+Xử lý ảnh và thị giác máy tính · Chương 2
+54
+
+
+=== TRANG 55 ===
+2.6.3 · Ví dụ tổng hợp
+Ảnh thiếu sáng, nhiễu và hơi mờ
+1
+Khảo sát
+Ảnh và 
+histogram: m 
+nhỏ, có nhiễu 
+muối tiêu
+2
+Trung vị 3×3
+Khử nhiễu, 
+giữ biên
+3
+CLAHE
+Tăng tương 
+phản cục bộ
+4
+Unsharp
+Hệ số vừa phải
+5
+Đánh giá
+Quan sát và 
+PSNR
+Khử nhiễu trước (nhiễu đã bị khuếch đại sẽ khó khử) · Làm sắc nét sau cùng · Thử và chỉnh 
+tham số theo từng ảnh.
+Xử lý ảnh và thị giác máy tính · Chương 2
+55
+
+
+=== TRANG 56 ===
+2.7
+Thực hành với Python và OpenCV
+Gamma, cân bằng, CLAHE, Otsu · Lọc không gian · Lọc tần số · PSNR
+56
+
+
+=== TRANG 57 ===
+2.7.1 · Ví dụ 1
+Gamma, cân bằng histogram, CLAHE, Otsu
+import cv2, numpy as np
+img = cv2.imread("anh.jpg", cv2.IMREAD_GRAYSCALE)
+# 1. Hiệu chỉnh gamma qua bảng tra (LUT)
+gamma = 0.45
+lut = np.array([((i/255.0)**gamma)*255 for i in range(256)], dtype=np.uint8)
+anh_gamma = cv2.LUT(img, lut)
+# 2. Cân bằng histogram toàn cục
+anh_eq = cv2.equalizeHist(img)
+# 3. Cân bằng thích nghi CLAHE
+clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+anh_clahe = clahe.apply(img)
+# 4. Ngưỡng tự động Otsu
+nguong, anh_nhiphan = cv2.threshold(
+    img, 0, 255,cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+print("Ngưỡng Otsu tự động tìm được:", nguong)
+Xử lý ảnh và thị giác máy tính · Chương 2
+57
+
+
+=== TRANG 58 ===
+2.7.2 · Ví dụ 2
+Lọc làm trơn và làm sắc nét
+import cv2, numpy as np
+img = cv2.imread("anh.jpg", cv2.IMREAD_GRAYSCALE)
+# Lọc làm trơn
+mean = cv2.blur(img, (5, 5))
+gauss = cv2.GaussianBlur(img, (5, 5), 1.2)
+median = cv2.medianBlur(img, 5)
+# Làm sắc nét bằng Laplacian (ksize=1: mặt nạ 4 lân cận)
+lap = cv2.Laplacian(img, cv2.CV_64F, ksize=1)
+sharp = np.clip(img - lap, 0, 255).astype(np.uint8)
+# Unsharp masking: g = f + k(f - f_mờ) với k = 0.5
+blur = cv2.GaussianBlur(img, (0, 0), 2.0)
+unsharp = cv2.addWeighted(img, 1.5, blur, -0.5, 0)
+Xử lý ảnh và thị giác máy tính · Chương 2
+58
+
+
+=== TRANG 59 ===
+2.7.3 · Ví dụ 3
+Lọc thông thấp Gauss trong miền tần số
+import cv2, numpy as np
+img = cv2.imread("anh.jpg", cv2.IMREAD_GRAYSCALE).astype(np.float64)
+M, N = img.shape
+F = np.fft.fftshift(np.fft.fft2(img)) # DFT + dịch tâm
+u = np.arange(M) - M//2
+v = np.arange(N) - N//2
+V, U = np.meshgrid(v, u)
+D = np.sqrt(U**2 + V**2) # khoảng cách tới tâm
+D0 = 40
+H = np.exp(-(D**2) / (2 * D0**2)) # thông thấp Gauss
+G = F * H # áp bộ lọc
+ket_qua = np.real(np.fft.ifft2(np.fft.ifftshift(G)))
+ket_qua = np.clip(ket_qua, 0, 255).astype(np.uint8)
+Xử lý ảnh và thị giác máy tính · Chương 2
+59
+
+
+=== TRANG 60 ===
+2.7.4 – 2.7.5 · Đánh giá
+Đánh giá chất lượng khách quan
+PSNR càng cao càng gần ảnh tham chiếu; ảnh tốt thường 30 – 50 dB.
+PSNR không luôn khớp cảm nhận → bổ sung SSIM (Wang và cộng sự, 2004).
+Trình bày: ảnh trước/sau cạnh nhau, cùng thang xám, kèm histogram.
+Ảnh dải động rộng (phổ Fourier): hiển thị bằng log.
+Xử lý ảnh và thị giác máy tính · Chương 2
+60
+
+
+=== TRANG 61 ===
+Tổng kết
+Tóm tắt chương 2
+Miền không gian
+Biến đổi mức xám: âm bản, log, gamma, 
+từng đoạn, bó cụm
+Histogram: cân bằng, đối sánh, 
+CLAHE, Otsu
+Lọc: trung bình, Gauss, trung vị, K gần 
+nhất; Sobel, Laplacian, unsharp
+Miền tần số
+DFT 2D và phổ biên độ
+Thông thấp, thông cao: lý tưởng, 
+Butterworth, Gauss
+Lọc chắn, lọc Wiener (*)
+Định lý tích chập nối hai miền · Đánh giá cả chủ quan lẫn MSE, PSNR, SSIM · Tiền xử lý 
+cho Chương 3.
+Xử lý ảnh và thị giác máy tính · Chương 2
+61
+
+
+=== TRANG 62 ===
+Ôn tập
+Bài tập tiêu biểu và đáp số
+Bài 2
+r = 50: âm bản, log (c = 
+45.99), gamma (c = 1, γ 
+= 0.5).
+205 · 181 · 113
+Bài 11
+Bó cụm 30, 90, 150, 210 với 
+bunch_size = 64.
+0 · 64 · 128 · 192
+Bài 12
+Otsu: histogram 10, 5, 5, 10 
+trên mức 0 – 3; tính σB²(t), t 
+= 0, 1, 2.
+1.125 · 1.361 · 1.125 → t* 
+= 1
+Còn lại: bài 1, 3 – 10, 13 trong bài giảng. Đánh giá CLO1 và CLO4.
+Xử lý ảnh và thị giác máy tính · Chương 2
+62
+
+
+=== TRANG 63 ===
+Thảo luận nhóm
+Chủ đề seminar
+1
+Cân bằng toàn cục và CLAHE trên ảnh 
+y tế
+2
+Làm trơn: miền không gian và miền tần số 
+(hiệu quả, chi phí)
+3
+Gợn sóng của lọc lý tưởng; vì sao Gauss 
+không gợn
+4
+Gamma trên các màn hình; vì sao sRGB 
+dùng γ ≈ 2.2
+5
+Otsu và ngưỡng chọn tay; khi nào Otsu 
+thất bại
+6
+K giá trị gần nhất và lọc song 
+phương (bilateral)
+Mỗi nhóm chuẩn bị báo cáo ngắn kèm ví dụ minh họa.
+Xử lý ảnh và thị giác máy tính · Chương 2
+63
+
+
+=== TRANG 64 ===
+Tài liệu
+Tài liệu tham khảo của chương
+Gonzalez, R. C., Woods, R. E. (2018). Digital Image Processing, 4th ed., Pearson: chương 3, 
+4, 5.
+Đỗ Năng Toàn, Phạm Việt Bình (2007). Giáo trình môn học Xử lý ảnh, ĐH Thái Nguyên.
+Otsu, N. (1979). A Threshold Selection Method from Gray-Level Histograms, IEEE Trans. 
+SMC, 9(1).
+Zuiderveld, K. (1994). Contrast Limited Adaptive Histogram Equalization, Graphics 
+Gems IV.
+Wang, Z. và cộng sự (2004). Image Quality Assessment: From Error Visibility to Structural 
+Similarity, IEEE Trans. Image Processing, 13(4).
+OpenCV (2026). OpenCV Documentation, docs.opencv.org.
+Xử lý ảnh và thị giác máy tính · Chương 2
+64
