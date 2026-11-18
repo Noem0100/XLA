@@ -70,8 +70,8 @@ class LessonDialog(QDialog):
         self.reference_path = None
         self.frame_paths = []
         layout = QVBoxLayout(self)
-        intro = QLabel('Chọn chức năng và điều chỉnh tham số theo ảnh. '
-                       'Áp dụng lên ảnh đang mở ở độ phân giải đầy đủ; Ctrl+Z để hoàn tác.')
+        intro = QLabel('Chọn chức năng và điều chỉnh tham số, sau đó nhấn nút bên dưới để thực hiện. '
+                       'Bạn có thể nhấn Ctrl+Z để hoàn tác sau khi áp dụng vào ảnh.')
         intro.setWordWrap(True)
         layout.addWidget(intro)
         selectors = QFormLayout()
@@ -114,7 +114,7 @@ class LessonDialog(QDialog):
         reference_layout.setContentsMargins(0, 0, 0, 0)
         choose_reference = QPushButton('Chọn ảnh tham chiếu…')
         choose_reference.clicked.connect(self.choose_reference)
-        self.reference_label = QLabel('Chưa chọn ảnh')
+        self.reference_label = QLabel('Chưa chọn ảnh tham chiếu')
         self.reference_label.setWordWrap(True)
         reference_layout.addWidget(choose_reference)
         reference_layout.addWidget(self.reference_label, 1)
@@ -133,6 +133,7 @@ class LessonDialog(QDialog):
         self.error.setStyleSheet('color: #b42318;')
         layout.addWidget(self.error)
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Apply | QDialogButtonBox.StandardButton.Cancel)
+        self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('Hủy')
         self.apply_button = self.buttons.button(QDialogButtonBox.StandardButton.Apply)
         self.apply_button.clicked.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
@@ -268,14 +269,15 @@ class LessonDialog(QDialog):
         values = self.parameter_values()
         for key, title, value, minimum, maximum in spec.fields:
             if isinstance(value, int) and 'lẻ' in title.lower() and values[key] % 2 == 0:
-                self.error.setText(f'{title} phải là số lẻ.')
+                self.error.setText(f'{title} phải là số lẻ. Vui lòng điều chỉnh giá trị rồi thử lại.')
                 self.widgets[key].setFocus()
                 return
         if spec.reference and not self.reference_path:
-            self.error.setText('Hãy chọn ảnh tham chiếu trước khi áp dụng.')
+            self.error.setText('Chưa có ảnh tham chiếu. Nhấn “Chọn ảnh tham chiếu…” rồi chọn ảnh để tiếp tục.')
             return
         if spec.frames and not self.frame_paths:
-            self.error.setText('Hãy chọn ít nhất một ảnh bổ sung cùng cảnh, cùng kích thước.')
+            self.error.setText('Vui lòng chọn ít nhất một ảnh bổ sung bằng nút “Chọn thêm ảnh cùng cảnh…”. '
+                               'Các ảnh cần cùng kích thước và đã căn chỉnh với ảnh đang mở.')
             return
         super().accept()
 
@@ -297,14 +299,16 @@ class AnalysisPreview(QDialog):
         self.setWindowTitle(title)
         self.resize(820, 640)
         layout = QVBoxLayout(self)
-        note = QLabel('Phổ Fourier để quan sát tần số. Ảnh đang chỉnh và lịch sử được giữ nguyên. '
-                      'Cuộn chuột để phóng to, kéo để di chuyển.')
+        note = QLabel('Phổ Fourier hiển thị các thành phần tần số của ảnh. '
+                      'Cuộn chuột để phóng to hoặc thu nhỏ; kéo chuột để di chuyển. '
+                      'Cửa sổ này chỉ để xem, không làm thay đổi ảnh đang chỉnh.')
         note.setWordWrap(True)
         layout.addWidget(note)
         self.canvas = Canvas()
         self.canvas.set_image(image)
         layout.addWidget(self.canvas, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.button(QDialogButtonBox.StandardButton.Close).setText('Đóng')
         buttons.rejected.connect(self.close)
         layout.addWidget(buttons)
         QTimer.singleShot(0, self.canvas.fit_image)

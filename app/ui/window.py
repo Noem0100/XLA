@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QShortcut, QKeySequence
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFrame,
     QLabel, QPushButton, QScrollArea, QTabWidget, QSlider, QSpinBox, QComboBox,
-    QListWidget, QFileDialog, QMessageBox, QCheckBox, QSplitter, QProgressBar,
+    QListWidget, QFileDialog, QCheckBox, QSplitter, QProgressBar,
     QDialog, QDialogButtonBox)
 from app.core import adjustments, filters, geometry, retouch, enhancement_spatial
 from app.core.io import load_image, export_image, load_project, save_project, from_png
@@ -13,7 +13,7 @@ from app.core.batch import batch_export
 from .canvas import Canvas
 from .image_page import ImagePage
 from .histogram import Histogram
-from .dialogs import parameters
+from .dialogs import parameters, show_message, show_error, confirm_action
 from .worker import Worker
 from .lesson_tools import choose_lesson, lesson_spec, process_lesson, AnalysisPreview
 
@@ -238,7 +238,7 @@ class MainWindow(QMainWindow):
             spin = QSpinBox()
             spin.setRange(minimum, maximum)
             spin.setValue(adjustments.DEFAULTS[key])
-            spin.setFixedWidth(72)
+            spin.setFixedWidth(96)
             row.addWidget(spin)
             adjust_box.addLayout(row)
             slider = QSlider(Qt.Orientation.Horizontal)
@@ -348,7 +348,7 @@ class MainWindow(QMainWindow):
 
     def alert(self, message):
         """Thông báo lỗi có thể phục hồi; giữ nguyên tài liệu hiện tại."""
-        QMessageBox.warning(self, 'Minh Đăng Photo', str(message))
+        show_error(self, message)
 
     def values(self):
         """Thu thập tham số hiện tại từ các thanh trượt."""
@@ -363,10 +363,11 @@ class MainWindow(QMainWindow):
         if self.busy:
             return False
         if self.doc is None:
-            self.alert('Hãy mở ảnh trước.')
+            self.alert('Bạn cần mở ảnh trước khi sử dụng chức năng này. Chọn “Mở ảnh / nhiều ảnh” hoặc nhấn Ctrl+O.')
             return False
         if not allow_pending and self.pending():
-            self.alert('Hãy nhấn Áp dụng điều chỉnh hoặc Đặt lại thanh trượt trước thao tác này.')
+            self.alert('Có điều chỉnh đang được xem trước. Chọn “Áp dụng điều chỉnh” để giữ kết quả, '
+                       'hoặc “Đặt lại thanh trượt” để bỏ bản xem trước, rồi thực hiện lại thao tác.')
             return False
         return True
 
@@ -502,7 +503,7 @@ class MainWindow(QMainWindow):
             return
         params = self.values()
         if params['white'] <= params['black']:
-            self.alert('Điểm trắng phải lớn hơn điểm đen.')
+            self.alert('Điểm trắng phải lớn hơn điểm đen. Hãy tăng Điểm trắng hoặc giảm Điểm đen rồi áp dụng lại.')
             return
         source = self.doc.current.copy()
         pending = self.pending()
@@ -527,7 +528,7 @@ class MainWindow(QMainWindow):
     def show_histogram_detail(self):
         """Mở bốn biểu đồ lớn để đọc rõ các cột và thống kê từng mức."""
         if self.doc is None:
-            self.alert('Hãy mở ảnh trước.')
+            self.alert('Bạn cần mở ảnh để xem biểu đồ histogram. Chọn “Mở ảnh / nhiều ảnh” hoặc nhấn Ctrl+O.')
             return
         dialog = QDialog(self)
         dialog.setWindowTitle('Histogram · ' + self.histogram_context)
@@ -542,6 +543,7 @@ class MainWindow(QMainWindow):
         self.histogram_detail = histogram
         layout.addWidget(histogram, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.button(QDialogButtonBox.StandardButton.Close).setText('Đóng')
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
         try:
@@ -619,7 +621,7 @@ class MainWindow(QMainWindow):
         if self.ready(True) and self.pending():
             params = self.values()
             if params['white'] <= params['black']:
-                self.alert('Điểm trắng phải lớn hơn điểm đen.')
+                self.alert('Điểm trắng phải lớn hơn điểm đen. Hãy tăng Điểm trắng hoặc giảm Điểm đen rồi áp dụng lại.')
                 return
             source = self.doc.current.copy()
             titles = [title.split(' · ')[0] for key, title, _, _ in ADJUSTERS
@@ -717,12 +719,13 @@ class MainWindow(QMainWindow):
         unsaved = ((self.doc.dirty or self.pending() or self.color_filter_channel is not None)
                    if page is self.active_page else getattr(page, 'unsaved', False))
         if unsaved:
-            reply = QMessageBox.question(
-                self, 'Thay đổi chưa lưu dự án',
-                f'Đóng "{getattr(page, "source_name", "ảnh")}" sẽ bỏ các thay đổi chưa lưu trong phiên này.\nẢnh đã xuất trên đĩa vẫn được giữ. Tiếp tục?',
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No)
-            if reply != QMessageBox.StandardButton.Yes:
+            if not confirm_action(
+                    self, 'Đóng ảnh chưa lưu',
+                    f'Ảnh “{getattr(page, "source_name", "ảnh")}” có thay đổi chưa lưu vào dự án.\n'
+                    'Bạn có muốn đóng ảnh và bỏ các thay đổi này?',
+                    'Đóng và bỏ thay đổi',
+                    hint='Để giữ ảnh gốc và ảnh đã chỉnh, chọn “Tiếp tục chỉnh sửa” rồi lưu dự án (.mdphoto). '
+                         'Các tệp ảnh đã xuất vẫn được giữ.'):
                 return
         if page is self.active_page:
             self.active_page = None
@@ -741,11 +744,13 @@ class MainWindow(QMainWindow):
         if not has_unsaved and self.doc is not None:
             has_unsaved = self.doc.dirty or self.pending()
         if has_unsaved:
-            return QMessageBox.question(
-                self, 'Thay đổi chưa lưu dự án',
-                'Thoát ứng dụng sẽ bỏ các thay đổi chưa lưu trong phiên này.\nẢnh đã xuất trên đĩa vẫn được giữ. Tiếp tục?',
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes
+            return confirm_action(
+                self, 'Thoát khi còn thay đổi chưa lưu',
+                'Một hoặc nhiều ảnh đang mở có thay đổi chưa lưu vào dự án.\n'
+                'Bạn có muốn thoát và bỏ các thay đổi này?',
+                'Thoát và bỏ thay đổi',
+                hint='Để giữ ảnh gốc và ảnh đã chỉnh, chọn “Tiếp tục chỉnh sửa” rồi lưu dự án cho từng ảnh. '
+                     'Các tệp ảnh đã xuất vẫn được giữ.')
         return True
 
     def set_document(self, image, name, original=None, created=False):
@@ -790,7 +795,8 @@ class MainWindow(QMainWindow):
         if not self.ready():
             return
         if self.color_filter_channel is not None:
-            self.alert('Nhấn Áp dụng lớp lọc hoặc Tắt lớp lọc trước khi lưu dự án.')
+            self.alert('Lớp lọc histogram đang ở chế độ xem trước. Chọn “Áp dụng lớp lọc” để giữ kết quả '
+                       'hoặc “Tắt lớp lọc” để bỏ bản xem trước, rồi lưu dự án.')
             return
         path, _ = QFileDialog.getSaveFileName(self, 'Lưu dự án', 'Chinh_anh.mdphoto', 'Minh Đăng Photo (*.mdphoto)')
         if path:
@@ -808,10 +814,13 @@ class MainWindow(QMainWindow):
         if not self.ready():
             return
         if self.color_filter_channel is not None:
-            self.alert('Nhấn Áp dụng lớp lọc hoặc Tắt lớp lọc trước khi xuất ảnh.')
+            self.alert('Lớp lọc histogram đang ở chế độ xem trước. Chọn “Áp dụng lớp lọc” để giữ kết quả '
+                       'hoặc “Tắt lớp lọc” để bỏ bản xem trước, rồi xuất ảnh.')
             return
         options = parameters(self, 'Xuất ảnh', [('quality', 'Chất lượng JPEG / WebP', 95, 1, 100)],
-                             'PNG giữ trong suốt. JPEG/BMP chuyển nền trong suốt thành trắng. Không giữ EXIF/GPS.')
+                             'Chất lượng chỉ áp dụng cho JPEG và WebP. PNG giữ nền trong suốt; '
+                             'JPEG và BMP thay nền trong suốt bằng màu trắng. Ảnh xuất không giữ thông tin EXIF/GPS.',
+                             accept_text='Tiếp tục')
         if not options:
             return
         path, selected = QFileDialog.getSaveFileName(self, 'Xuất ảnh', 'Anh_da_chinh.png',
@@ -821,7 +830,8 @@ class MainWindow(QMainWindow):
                 extension = {'PNG': '.png', 'JPEG': '.jpg', 'WebP': '.webp', 'TIFF': '.tiff', 'BMP': '.bmp'}[selected.split()[0]]
                 path += extension
             self.start_task('Xuất ảnh', lambda: export_image(self.doc.current, path, options['quality']),
-                            lambda _: QMessageBox.information(self, 'Xuất thành công', f'Đã lưu ảnh:\n{path}'))
+                            lambda _: show_message(self, 'Xuất ảnh thành công', f'Ảnh đã được lưu tại:\n{path}',
+                                                   hint='Để lưu cả ảnh gốc và ảnh đã chỉnh, dùng “Lưu dự án”.'))
 
     def undo(self):
         """Hoàn tác một trạng thái và xóa mask không còn tương ứng."""
@@ -889,7 +899,9 @@ class MainWindow(QMainWindow):
     def do_rotate(self):
         """Nhập góc xoay tùy ý; góc dương ngược chiều kim đồng hồ."""
         if self.ready():
-            p = parameters(self, 'Xoay / Nắn thẳng', [('degrees', 'Góc xoay (độ)', 90.0, -180, 180)], 'Sau khi nắn thẳng, dùng Crop để bỏ các góc trong suốt.')
+            p = parameters(
+                self, 'Xoay / Nắn thẳng', [('degrees', 'Góc xoay (độ)', 90.0, -180, 180)],
+                field_options={'degrees': {'suffix': '°', 'decimals': 2, 'step': 1.0}})
             if p:
                 self.run_image('Xoay ảnh', lambda image: geometry.rotate(image, p['degrees']))
 
@@ -916,8 +928,9 @@ class MainWindow(QMainWindow):
                 points = [tuple(map(int, item.strip().split(':'))) for item in p['points'].split(',')]
                 if any(len(pair) != 2 for pair in points):
                     raise ValueError('Mỗi nút cần đúng hai số X:Y.')
-            except ValueError as exc:
-                self.alert(str(exc))
+            except ValueError:
+                self.alert('Các điểm của đường cong chưa đúng định dạng. Nhập mỗi điểm bằng hai số nguyên X:Y, '
+                           'ngăn cách các điểm bằng dấu phẩy. Ví dụ: 0:0, 128:150, 255:255.')
                 return
             self.run_image('Curves ' + p['channel'], lambda image: adjustments.curve(image, points, p['channel']))
 
@@ -926,7 +939,7 @@ class MainWindow(QMainWindow):
         if self.ready():
             p = parameters(self, 'Màu chọn lọc HSL', [('center', 'Dải màu', ['Đỏ', 'Vàng', 'Xanh lá', 'Cyan', 'Xanh dương', 'Tím'], 0, 0),
                 ('hue', 'Dịch hue (độ)', 0, -90, 90), ('sat', 'Bão hòa (%)', 0, -100, 100), ('light', 'Độ sáng (%)', 0, -100, 100)],
-                'Công cụ giao diện HSL được triển khai bằng HSV; Độ sáng điều chỉnh Value, không phải Lightness của HSL chuẩn.')
+                'Chọn dải màu cần chỉnh, sau đó điều chỉnh sắc độ, độ bão hòa và độ sáng của dải màu đó.')
             if p:
                 center = ['Đỏ', 'Vàng', 'Xanh lá', 'Cyan', 'Xanh dương', 'Tím'].index(p['center']) * 60
                 self.run_image('Màu chọn lọc', lambda image: adjustments.hsl(image, center, p['hue'], p['sat'], p['light']))
@@ -935,7 +948,8 @@ class MainWindow(QMainWindow):
         """Chọn thuật toán lọc hoặc công cụ phân tích phục vụ báo cáo."""
         if self.ready():
             p = parameters(self, 'Bộ lọc và thuật toán', [('kind', 'Thuật toán', ['Làm nét', 'Gaussian', 'Median', 'Bilateral', 'Khử nhiễu NLM', 'CLAHE', 'Cartoon', 'Phác thảo', 'Canny', 'Otsu', 'Âm bản'], 0, 0),
-                      ('amount', 'Cường độ', 10, 1, 50)], 'NLM có thể mất nhiều thời gian trên ảnh lớn. Canny/Otsu tạo ảnh phân tích; có thể Ctrl+Z để quay lại.')
+                      ('amount', 'Cường độ', 10, 1, 50)], 'Khử nhiễu NLM có thể mất thêm thời gian với ảnh lớn. '
+                      'Canny tạo ảnh biên, Otsu tạo ảnh đen trắng. Nhấn Ctrl+Z để hoàn tác sau khi áp dụng.')
             if p:
                 self.run_image(p['kind'], lambda image: filters.spatial(image, p['kind'], p['amount']))
 
@@ -989,12 +1003,13 @@ class MainWindow(QMainWindow):
     def show_quality(self, result, reference_name):
         """Chỉ số so với tham chiếu là thông tin; không thêm một bước chỉnh ảnh."""
         psnr = '∞ (trùng khớp)' if np.isinf(result['psnr']) else f'{result["psnr"]:.4f} dB'
-        QMessageBox.information(self, 'Đánh giá chất lượng ảnh',
-            f'Tham chiếu: {reference_name}\n\nMSE: {result["mse"]:.4f}\n'
-            f'PSNR: {psnr}\nSSIM: {result["ssim"]:.6f}\n\n'
-            'MSE thấp, PSNR và SSIM cao thể hiện mức giống ảnh tham chiếu hơn. '
-            'Chỉ so sánh pixel nhìn thấy chung; ảnh phải cùng kích thước và đã căn chỉnh. '
-            'Các chỉ số không tự kết luận ảnh đẹp hơn.')
+        show_message(self, 'Kết quả so sánh chất lượng ảnh',
+            f'Ảnh tham chiếu: {reference_name}\n\nMSE: {result["mse"]:.4f}\n'
+            f'PSNR: {psnr}\nSSIM: {result["ssim"]:.6f}',
+            hint='MSE càng thấp, PSNR càng cao và SSIM càng gần 1 thì ảnh càng giống ảnh tham chiếu. '
+                 'Các chỉ số chỉ phản ánh độ tương đồng, không kết luận ảnh đẹp hơn.',
+            details='Chỉ so sánh các điểm ảnh nhìn thấy ở cả hai ảnh. '
+                    'Để kết quả có ý nghĩa, hai ảnh cần cùng kích thước và được căn chỉnh với nhau.')
 
     def apply_preset(self):
         """Áp dụng preset và cường độ đang chọn trên panel màu."""
@@ -1058,7 +1073,7 @@ class MainWindow(QMainWindow):
         if not paths:
             return
         if len(paths) > 12:
-            self.alert('Hãy chọn tối đa 12 ảnh.')
+            self.alert(f'Bạn đã chọn {len(paths)} ảnh. Mỗi lần ghép hỗ trợ tối đa 12 ảnh; hãy chọn lại số ảnh phù hợp.')
             return
         p = parameters(self, 'Ghép ảnh dạng lưới', [('columns', 'Số cột', 2, 1, 4), ('cell', 'Cỡ ô vuông', 600, 100, 1200), ('gap', 'Khoảng cách', 16, 0, 100)],
                        'Mỗi ảnh được cắt vừa ô vuông ở tâm. Kết quả tạo tài liệu mới.')
@@ -1084,10 +1099,17 @@ class MainWindow(QMainWindow):
     def batch_done(self, results):
         """Báo số ảnh thành công và lỗi từng file thay vì che giấu lỗi batch."""
         errors = [f'{Path(source).name}: {error}' for source, _, error in results if error]
-        message = f'Thành công {len(results) - len(errors)}/{len(results)} ảnh.'
+        succeeded = len(results) - len(errors)
+        message = f'Đã xuất thành công {succeeded}/{len(results)} ảnh.'
         if errors:
-            message += '\n\n' + '\n'.join(errors)
-        QMessageBox.information(self, 'Kết quả hàng loạt', message)
+            title = 'Một số ảnh chưa xuất được' if succeeded else 'Không thể xuất các ảnh đã chọn'
+            show_message(self, title, message + f'\nCó {len(errors)} ảnh chưa xuất được.',
+                         kind='warning', hint='Mở “Xem chi tiết” để biết ảnh gặp lỗi và nguyên nhân, '
+                                             'sau đó kiểm tra các tệp đó rồi thử lại.',
+                         details='\n'.join(errors))
+        else:
+            show_message(self, 'Xuất hàng loạt hoàn tất', message,
+                         hint='Các ảnh kết quả đã được lưu trong thư mục bạn chọn.')
 
     def restore(self):
         """Khôi phục ảnh gốc như một bước có thể undo, không xóa lịch sử."""
@@ -1096,22 +1118,18 @@ class MainWindow(QMainWindow):
 
     def help(self):
         """Hướng dẫn quy trình và các giới hạn ngay trong app."""
-        QMessageBox.information(self, 'Hướng dẫn nhanh',
-            '1. Mở ảnh JPG/PNG/WebP/BMP/TIFF.\n'
-            '2. Kéo thanh trượt → Áp dụng điều chỉnh.\n'
-            '3. Crop: kéo chọn → Cắt vùng đã chọn.\n'
-            '4. Cọ: chọn hiệu ứng → tô vùng đỏ → Áp dụng vào vùng tô.\n'
-            '5. Ctrl+Z hoàn tác; Ctrl+Shift+Z làm lại.\n'
-            '6. Lưu .mdphoto để giữ bản gốc và bản đã chỉnh.\n'
-            '7. Xuất ảnh PNG/JPEG/WebP/TIFF/BMP.\n\n'
-            'Bài học: mở Thuật toán bài học để chọn biến đổi mức xám, histogram, '
-            'lọc không gian/tần số, phát hiện biên, phân đoạn và hình thái học. '
-            'Mỗi thuật toán có mô tả, tham số và trang bài giảng. Phổ Fourier xem riêng; '
-            'các kết quả áp dụng đều hoàn tác được. Đánh giá MSE/PSNR/SSIM cần ảnh chuẩn cùng kích thước.\n\n'
-            'Giới hạn: 20 triệu pixel/ảnh; RGBA 8 bit sRGB. Chữ/sticker gộp vào ảnh. '
-            'Dự án không giữ undo qua lần mở lại. Không có RAW, AI sinh ảnh, nhận diện chủ thể, '
-            'layer chuyên nghiệp, lens correction hoặc đồng bộ đám mây.\n\n'
-            'Xem README.md và tài liệu Word trong thư mục docs để cài đặt và hiểu thuật toán.')
+        show_message(self, 'Hướng dẫn sử dụng',
+            '1. Chọn “Mở ảnh / nhiều ảnh” hoặc nhấn Ctrl+O.\n'
+            '2. Chỉnh các thanh trượt, rồi chọn “Áp dụng điều chỉnh”.\n'
+            '3. Để cắt ảnh: chọn “Chọn vùng cắt”, kéo vùng cần giữ, rồi chọn “Cắt vùng đã chọn”.\n'
+            '4. Dùng “Bộ lọc và xử lý ảnh” để chọn bộ lọc, chỉnh tham số và áp dụng.\n'
+            '5. Với cọ: chọn hiệu ứng, tô vùng cần sửa, rồi chọn “Áp dụng vào vùng tô”.\n'
+            '6. Nhấn Ctrl+Z để hoàn tác; Ctrl+Shift+Z để làm lại.\n'
+            '7. Dùng “Lưu dự án” để giữ ảnh gốc và ảnh đã chỉnh; dùng “Xuất ảnh” để tạo tệp ảnh kết quả.',
+            details='Ảnh hỗ trợ: JPG, PNG, WebP, BMP và TIFF; tối đa 20 triệu điểm ảnh.\n'
+                    'Dự án .mdphoto lưu ảnh gốc và ảnh đã chỉnh, không khôi phục lịch sử hoàn tác khi mở lại.\n'
+                    'Chữ và ảnh phủ được gộp vào ảnh sau khi áp dụng.\n'
+                    'Phổ Fourier được mở riêng để xem. So sánh chất lượng ảnh cần ảnh tham chiếu cùng kích thước và đã căn chỉnh.')
 
     def closeEvent(self, event):
         """Không đóng khi luồng còn chạy; hỏi khi có thay đổi chưa lưu."""

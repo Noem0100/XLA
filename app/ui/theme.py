@@ -1,4 +1,10 @@
 """Thiết kế giao diện tập trung trong một stylesheet."""
+from pathlib import Path
+
+_ASSETS = Path(__file__).resolve().parents[2] / 'assets'
+_DROPDOWN_ARROW = (_ASSETS / 'dropdown_arrow.svg').as_posix()
+_UP_ARROW = (_ASSETS / 'up_arrow.svg').as_posix()
+
 STYLE = '''
 QMainWindow, QDialog { background: #f3f6fa; color: #233044; }
 QWidget { background-color: #f3f6fa; color: #233044; font-family: 'Segoe UI', 'DejaVu Sans'; font-size: 12px; }
@@ -14,6 +20,21 @@ QPushButton#primary { background: #147d68; color: #ffffff; font-weight: 700; bor
 QPushButton#primary:hover { background: #106653; }
 QPushButton#primary:disabled { background: #e2e8ef; color: #7c8999; }
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QPlainTextEdit { background: #ffffff; border: 1px solid #c5d1df; border-radius: 5px; padding: 6px; selection-background-color: #147d68; selection-color: #ffffff; }
+QSpinBox, QDoubleSpinBox { min-height: 22px; }
+QSpinBox::up-button, QDoubleSpinBox::up-button { subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border-left: 1px solid #c5d1df; border-bottom: 1px solid #c5d1df; border-top-right-radius: 4px; background: #eef3f8; }
+QSpinBox::down-button, QDoubleSpinBox::down-button { subcontrol-origin: padding; subcontrol-position: bottom right; width: 28px; border-left: 1px solid #c5d1df; border-bottom-right-radius: 4px; background: #eef3f8; }
+QSpinBox::up-button:hover, QSpinBox::down-button:hover, QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover { background: #e0edf7; }
+QSpinBox::up-button:pressed, QSpinBox::down-button:pressed, QDoubleSpinBox::up-button:pressed, QDoubleSpinBox::down-button:pressed { background: #cceee6; }
+QSpinBox::up-button:disabled, QSpinBox::down-button:disabled, QDoubleSpinBox::up-button:disabled, QDoubleSpinBox::down-button:disabled,
+QSpinBox::up-button:off, QSpinBox::down-button:off, QDoubleSpinBox::up-button:off, QDoubleSpinBox::down-button:off { background: #edf1f5; }
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow { image: url("__UP_ARROW__"); width: 12px; height: 8px; }
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow { image: url("__DROPDOWN_ARROW__"); width: 12px; height: 8px; }
+QComboBox { padding-right: 36px; }
+QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border-left: 1px solid #c5d1df; border-top-right-radius: 4px; border-bottom-right-radius: 4px; background: #eef3f8; }
+QComboBox::drop-down:hover { background: #e0edf7; }
+QComboBox::drop-down:on { background: #cceee6; }
+QComboBox::drop-down:disabled { background: #edf1f5; }
+QComboBox::down-arrow { image: url("__DROPDOWN_ARROW__"); width: 12px; height: 8px; }
 QComboBox QAbstractItemView { background: #ffffff; selection-background-color: #dcefe9; selection-color: #145c4c; }
 QScrollArea { border: none; background: transparent; }
 QScrollArea > QWidget > QWidget { background: #ffffff; }
@@ -38,4 +59,4 @@ QScrollBar::add-page, QScrollBar::sub-page { background: none; }
 QMenuBar, QMenu { background: #ffffff; color: #233044; }
 QMenuBar::item:selected, QMenu::item:selected { background: #d4eee6; color: #145c4c; }
 QMessageBox { background: #ffffff; }
-'''
+'''.replace('__DROPDOWN_ARROW__', _DROPDOWN_ARROW).replace('__UP_ARROW__', _UP_ARROW)
